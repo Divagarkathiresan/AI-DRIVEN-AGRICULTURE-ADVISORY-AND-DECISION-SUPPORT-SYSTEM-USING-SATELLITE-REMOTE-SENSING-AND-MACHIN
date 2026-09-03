@@ -7,25 +7,25 @@ from pydantic import BaseModel, Field
 
 
 class Weather(BaseModel):
-    temperature: float
-    humidity: float
-    rainfall: float
-    wind_speed: float
-    rain_probability: float
+    temperature: Optional[float] = None
+    humidity: Optional[float] = None
+    rainfall: Optional[float] = None
+    wind_speed: Optional[float] = None
+    rain_probability: Optional[float] = None
 
 
 class Satellite(BaseModel):
-    average_ndvi: float
-    health_score: int
-    healthy_area: float
+    average_ndvi: Optional[float] = None
+    health_score: Optional[int] = None
+    healthy_area: Optional[float] = None
     status: str
-    satellite_image_url: str
-    ndvi_image_url: str
+    satellite_image_url: Optional[str] = None
+    ndvi_image_url: Optional[str] = None
     recommendation: str
 
 
 class SoilMoisture(BaseModel):
-    soil_moisture_score: int
+    soil_moisture_score: Optional[int] = None
     soil_moisture_level: str
 
 
@@ -40,11 +40,11 @@ class WaterRequirement(BaseModel):
 class Recommendation(BaseModel):
     irrigation_status: str
     recommendation: str
-    best_irrigation_time: str
+    best_irrigation_time: Optional[str] = None
     soil_moisture_level: str
-    soil_moisture_score: int
-    estimated_water_required_liters: float
-    estimated_water_saved_liters: float
+    soil_moisture_score: Optional[int] = None
+    estimated_water_required_liters: Optional[float] = None
+    estimated_water_saved_liters: Optional[float] = None
     generated_at: datetime
 
 

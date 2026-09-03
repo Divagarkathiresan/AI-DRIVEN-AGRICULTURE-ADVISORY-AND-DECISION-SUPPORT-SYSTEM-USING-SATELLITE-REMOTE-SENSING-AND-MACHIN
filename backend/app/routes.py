@@ -4,8 +4,8 @@ import requests
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from datetime import date, datetime
-from typing import Optional
+from datetime import date, datetime, timedelta
+from typing import Optional, List
 
 try:
     from .model_loader import model, encoder
@@ -145,32 +145,13 @@ def get_irrigation_report(
     return report
 
 
-@router.get("/farm/{farm_id}/irrigation", response_model=IrrigationReport)
-def get_irrigation_plan(
-    farm_id: str,
-    report_date: date = Query(default_factory=date.today),
-    current_user: CurrentUser = Depends(get_current_user)
-):
-
-    # Check whether the farm exists
-    farm = get_farm_by_id(farm_id)
-
-    if not farm:
-        raise HTTPException(
-            status_code=404,
-            detail="Farm not found"
-        )
-
-    # Ensure the logged-in user owns this farm
-    if farm.get("user_id") != current_user.user_id:
-        raise HTTPException(
-            status_code=403,
-            detail="You do not have access to this farm"
-        )
+def _generate_plan_for_date(farm_id: str, farm: dict, report_date: date):
+    """Core logic shared by single and bulk irrigation plan routes.
+    Returns a dict (report data) or a JSONResponse (satellite unavailable).
+    Raises HTTPException on hard failures."""
 
     report_date_value = report_date.isoformat()
 
-    # Pre-calc crop_day from planting_date if available
     crop_day: Optional[int] = None
     planting = farm.get("planting_date")
     if planting:
@@ -184,68 +165,59 @@ def get_irrigation_plan(
             crop_day = max(1, days)
         except Exception:
             crop_day = None
+
     saved_report = get_irrigation_report_by_date(farm_id, report_date_value)
     if saved_report:
         saved_report.pop("_id", None)
-        # populate crop_day if missing
         if crop_day is not None and not saved_report.get("crop_day"):
             saved_report["crop_day"] = crop_day
-            # populate crop_stage when we have crop_day
             try:
                 crop_stage_val = compute_crop_stage(farm.get("crop_name"), crop_day)
                 if crop_stage_val:
                     saved_report["crop_stage"] = crop_stage_val
             except Exception:
                 pass
-        return saved_report 
+        return saved_report
 
-    # No report exists for this date, so generate the irrigation and NDVI analysis once.
-    result = IrrigationService.generate_irrigation_plan(farm_id)
+    result = IrrigationService.generate_irrigation_plan(farm_id, report_date_value)
 
     if result.get("success") is False:
         if result.get("reason") == "satellite_unavailable":
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "farm_id": farm_id,
-                    "report_date": report_date_value,
-                    "crop_name": farm.get("crop_name", ""),
-                    "location": farm.get("location", {}),
-                    "weather": result.get("weather"),
-                        "crop_day": crop_day,
-                        "crop_stage": compute_crop_stage(farm.get("crop_name", ""), crop_day),
-                    "satellite": {
-                        "average_ndvi": None,
-                        "health_score": None,
-                        "healthy_area": None,
-                        "status": "Satellite data unavailable",
-                        "satellite_image_url": None,
-                        "ndvi_image_url": None,
-                        "recommendation": result["message"],
-                    },
-                    "soil_moisture": {
-                        "soil_moisture_score": None,
-                        "soil_moisture_level": "Unavailable",
-                    },
-                    "water_requirement": result.get("water_requirement"),
-                    "recommendation": {
-                        "irrigation_status": "Unavailable",
-                        "recommendation": "Satellite data is unavailable for this farm right now. Try again after new imagery is available.",
-                        "best_irrigation_time": None,
-                        "soil_moisture_level": "Unavailable",
-                        "soil_moisture_score": None,
-                        "estimated_water_required_liters": result.get("water_requirement", {}).get("water_required_liters"),
-                        "estimated_water_saved_liters": None,
-                        "generated_at": datetime.utcnow().isoformat(),
-                    },
+            return {
+                "farm_id": farm_id,
+                "report_date": report_date_value,
+                "crop_name": farm.get("crop_name", ""),
+                "location": farm.get("location", {}),
+                "weather": result.get("weather"),
+                "crop_day": crop_day,
+                "crop_stage": compute_crop_stage(farm.get("crop_name", ""), crop_day),
+                "satellite": {
+                    "average_ndvi": None,
+                    "health_score": None,
+                    "healthy_area": None,
+                    "status": "Satellite data unavailable",
+                    "satellite_image_url": None,
+                    "ndvi_image_url": None,
+                    "recommendation": result["message"],
                 },
-            )
-        raise HTTPException(
-            status_code=404,
-            detail=result["message"]
-        )
+                "soil_moisture": {
+                    "soil_moisture_score": None,
+                    "soil_moisture_level": "Unavailable",
+                },
+                "water_requirement": result.get("water_requirement"),
+                "recommendation": {
+                    "irrigation_status": "Unavailable",
+                    "recommendation": "Satellite data is unavailable for this farm right now. Try again after new imagery is available.",
+                    "best_irrigation_time": None,
+                    "soil_moisture_level": "Unavailable",
+                    "soil_moisture_score": None,
+                    "estimated_water_required_liters": result.get("water_requirement", {}).get("water_required_liters"),
+                    "estimated_water_saved_liters": None,
+                    "generated_at": datetime.utcnow().isoformat(),
+                },
+            }
+        raise HTTPException(status_code=404, detail=result["message"])
 
-    # determine crop stage for generated report
     crop_stage = compute_crop_stage(result.get("crop_name") or farm.get("crop_name"), crop_day)
 
     report = IrrigationReport(
@@ -262,7 +234,57 @@ def get_irrigation_plan(
         crop_stage=crop_stage,
     )
     save_irrigation_report(report.model_dump())
-    return report
+    return report.model_dump()
+
+
+@router.get("/farm/{farm_id}/irrigation", response_model=IrrigationReport)
+def get_irrigation_plan(
+    farm_id: str,
+    report_date: date = Query(default_factory=date.today),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    farm = get_farm_by_id(farm_id)
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+    if farm.get("user_id") != current_user.user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this farm")
+
+    return _generate_plan_for_date(farm_id, farm, report_date)
+
+
+@router.get("/farm/{farm_id}/irrigation/bulk")
+def get_irrigation_plan_bulk(
+    farm_id: str,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    if end_date < start_date:
+        raise HTTPException(status_code=400, detail="end_date must be >= start_date")
+
+    farm = get_farm_by_id(farm_id)
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+    if farm.get("user_id") != current_user.user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this farm")
+
+    results = []
+    current_date = start_date
+    while current_date <= end_date:
+        try:
+            report = _generate_plan_for_date(farm_id, farm, current_date)
+            results.append({"date": current_date.isoformat(), "status": "success", "report": report})
+        except Exception as e:
+            results.append({"date": current_date.isoformat(), "status": "error", "detail": str(e)})
+        current_date += timedelta(days=1)
+
+    return {
+        "farm_id": farm_id,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "total": len(results),
+        "results": results
+    }
 
 
 @router.post("/farm/{farm_id}/irrigation/report", status_code=201)

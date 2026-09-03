@@ -1,18 +1,53 @@
+import os
+import re
+import requests
 from irrigation.weather import WeatherService
 from irrigation.soil_moisture import SoilMoistureEstimator
 from irrigation.water_requirement import WaterRequirementCalculator
 from irrigation.recommendation import IrrigationRecommendation
 from app.database.models import get_farm_by_id
-# Import your existing functions
 from satellite.ndvi import generate_ndvi
 
-# Import your MongoDB connection
+
+def _download_ndvi_images(farm_name: str, report_date: str, satellite: dict) -> dict:
+    """Download NDVI and satellite images into output/ndvi_images/<farm_name>_<date>/.
+    Skips download if the folder already exists. Returns updated URL fields."""
+
+    safe_name = re.sub(r"[^\w\-]", "_", farm_name)
+    folder_name = f"{safe_name}_{report_date}"
+    folder_path = os.path.join("output", "ndvi_images", folder_name)
+
+    if os.path.exists(folder_path):
+        return satellite
+
+    os.makedirs(folder_path, exist_ok=True)
+
+    url_fields = {
+        "ndvi_image_url": "ndvi.png",
+        "satellite_image_url": "satellite.png",
+    }
+
+    for field, filename in url_fields.items():
+        url = satellite.get(field)
+        if not url or not url.startswith("http"):
+            continue
+        try:
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+            file_path = os.path.join(folder_path, filename)
+            with open(file_path, "wb") as f:
+                f.write(response.content)
+            satellite[field] = file_path
+        except Exception:
+            pass
+
+    return satellite
 
 
 class IrrigationService:
 
     @staticmethod
-    def generate_irrigation_plan(farm_id: str):
+    def generate_irrigation_plan(farm_id: str, report_date: str = None):
 
         # -----------------------------------------
         # Get Farm Details
@@ -43,7 +78,8 @@ class IrrigationService:
 
         weather = WeatherService.get_weather(
             latitude,
-            longitude
+            longitude,
+            report_date
         )
 
         # -----------------------------------------
@@ -52,8 +88,13 @@ class IrrigationService:
 
         satellite = generate_ndvi(
             latitude,
-            longitude
+            longitude,
+            report_date
         )
+
+        if satellite:
+            farm_name = farm.get("farm_name", farm_id)
+            satellite = _download_ndvi_images(farm_name, report_date, satellite)
 
         if not satellite:
             water = WaterRequirementCalculator.calculate(

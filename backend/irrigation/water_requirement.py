@@ -7,7 +7,7 @@ class WaterRequirementCalculator:
         "maize": 5,
         "cotton": 6,
         "sugarcane": 10,
-        "banana": 7,
+        "banana": 7, 
         "coconut": 6,
         "groundnut": 5,
         "turmeric": 6,

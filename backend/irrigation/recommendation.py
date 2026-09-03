@@ -13,8 +13,12 @@ class IrrigationRecommendation:
         water_required_liters: float
     ):
 
+        rain_probability = rain_probability or 0
+        rainfall = rainfall or 0
+        temperature = temperature or 0
+        water_required_liters = water_required_liters or 0
+
         # ---------------------------------
-        # Irrigation Status
         # ---------------------------------
 
         if rain_probability >= 70:

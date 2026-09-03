@@ -11,6 +11,12 @@ class SoilMoistureEstimator:
 
         score = 0
 
+        ndvi = ndvi or 0
+        rainfall = rainfall or 0
+        humidity = humidity or 0
+        temperature = temperature or 0
+        rain_probability = rain_probability or 0
+
         # -----------------------------
         # NDVI Contribution
         # -----------------------------

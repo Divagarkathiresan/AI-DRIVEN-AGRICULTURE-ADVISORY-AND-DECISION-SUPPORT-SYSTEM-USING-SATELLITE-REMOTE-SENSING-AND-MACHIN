@@ -8,21 +8,21 @@ from datetime import date, datetime, timedelta
 from typing import Optional, List
 
 try:
-    from .model_loader import model, encoder
-    from .schemas import CropInput, UserRegister, SendOTPRequest, VerifyOTPRequest
+    from .model_loader import model, encoder, predict_price
+    from .schemas import CropInput, UserRegister, SendOTPRequest, VerifyOTPRequest, MarketPriceRequest
     from .farm_schema import Farm
     from .irrigation_report_schema import IrrigationReport
     from .auth import CurrentUser, create_access_token, get_current_user
-    from .database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report
+    from .database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history
     from .database import connection
     from irrigation.irrigation_service import IrrigationService
 except ImportError:
-    from model_loader import model, encoder
-    from schemas import CropInput, UserRegister, SendOTPRequest, VerifyOTPRequest
+    from model_loader import model, encoder, predict_price
+    from schemas import CropInput, UserRegister, SendOTPRequest, VerifyOTPRequest, MarketPriceRequest
     from farm_schema import Farm
     from irrigation_report_schema import IrrigationReport
     from auth import CurrentUser, create_access_token, get_current_user
-    from database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report
+    from database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history
     from database import connection
     from irrigation.irrigation_service import IrrigationService
 
@@ -475,3 +475,75 @@ def add_farm(data: Farm, current_user: CurrentUser = Depends(get_current_user)):
     farm["user_id"] = current_user.user_id
     result = create_farm(farm)
     return {"message": "Farm created successfully", "farm_id": str(result.inserted_id)}
+
+
+@router.post("/market/predict")
+def predict_market_price(
+    data: MarketPriceRequest,
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    allowed_crops = ["Tomato", "Potato", "Pepper"]
+
+    if data.crop not in allowed_crops:
+        raise HTTPException(
+            status_code=400,
+            detail="Crop must be Tomato, Potato or Pepper"
+        )
+
+    history = get_market_price_history(
+        crop=data.crop,
+        location=data.location,
+        variety=data.variety
+    )
+
+    # print(history)
+    if len(history) < 30:
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough historical market data"
+        )
+
+    history = sorted(history, key=lambda x: x["date"])
+
+    prices = [float(item["modal_price"]) for item in history]
+
+    price_lag_1 = prices[-1]
+    price_lag_7 = prices[-7]
+    price_lag_14 = prices[-14]
+    price_lag_30 = prices[-30]
+
+    price_rolling_7 = sum(prices[-7:]) / 7
+    price_rolling_14 = sum(prices[-14:]) / 14
+    price_rolling_30 = sum(prices[-30:]) / 30
+
+    min_price = float(history[-1]["min_price"])
+    max_price = float(history[-1]["max_price"])
+    latest_record = history[-1]
+
+    prediction_date = datetime.utcnow().date()
+
+    predicted_price = predict_price(
+        crop=data.crop,
+        market=latest_record["market"],
+        variety=data.variety,
+        grade=latest_record["grade"],
+        min_price=min_price,
+        max_price=max_price,
+        price_lag_1=price_lag_1,
+        price_lag_7=price_lag_7,
+        price_lag_14=price_lag_14,
+        price_lag_30=price_lag_30,
+        price_rolling_7=price_rolling_7,
+        price_rolling_14=price_rolling_14,
+        price_rolling_30=price_rolling_30,
+        prediction_date=prediction_date
+    )
+
+    return {
+        "crop": data.crop,
+        "market": latest_record["market"],
+        "variety": data.variety,
+        "current_price": price_lag_1,
+        "predicted_price": predicted_price,
+        "prediction_date": str(prediction_date)
+    }

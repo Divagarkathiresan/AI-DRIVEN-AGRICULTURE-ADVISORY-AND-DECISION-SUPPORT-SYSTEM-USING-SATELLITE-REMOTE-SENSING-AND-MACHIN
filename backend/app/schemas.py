@@ -26,3 +26,9 @@ class SendOTPRequest(BaseModel):
 class VerifyOTPRequest(BaseModel):
     phone: str
     otp: str
+
+
+class MarketPriceRequest(BaseModel): 
+    crop: str
+    location: str = "Coimbatore, Tamil Nadu, India"
+    variety: str

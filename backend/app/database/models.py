@@ -61,3 +61,20 @@ def get_irrigation_report_by_date(farm_id: str, date: str):
     if report:
         report["_id"] = str(report["_id"])
     return report
+
+
+def get_market_price_history(crop: str, location: str, variety: str):
+    records = list(connection.market_prices_collection.find(
+        {"crop": crop, "location": location, "variety": variety},
+        {
+            "_id": 0,
+            "date": 1,
+            "market": 1,
+            "variety": 1,
+            "grade": 1,
+            "modal_price": 1,
+            "min_price": 1,
+            "max_price": 1
+        }
+    ).sort("date", 1))
+    return records

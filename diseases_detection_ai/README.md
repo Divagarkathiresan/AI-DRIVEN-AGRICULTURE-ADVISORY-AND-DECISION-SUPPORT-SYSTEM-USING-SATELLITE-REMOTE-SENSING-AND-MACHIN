@@ -151,6 +151,7 @@ diseases_detection_ai/
    python -m venv disease_detection_env
    disease_detection_env\Scripts\activate  # Windows
    # source disease_detection_env/bin/activate  # Linux/Mac
+   source disease_detection_env/Scripts/activate
    ```
 
 2. **Install Dependencies**:

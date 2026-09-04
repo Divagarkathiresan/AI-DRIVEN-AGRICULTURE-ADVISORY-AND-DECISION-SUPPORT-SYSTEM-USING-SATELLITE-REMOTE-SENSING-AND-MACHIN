@@ -2,7 +2,7 @@ import os
 import random
 import requests
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -475,6 +475,49 @@ def add_farm(data: Farm, current_user: CurrentUser = Depends(get_current_user)):
     farm["user_id"] = current_user.user_id
     result = create_farm(farm)
     return {"message": "Farm created successfully", "farm_id": str(result.inserted_id)}
+
+
+@router.post("/disease/predict")
+def predict_disease(
+    file: UploadFile = File(...),
+    include_explanation: bool = Form(True),
+    weather_humidity: Optional[float] = Form(None),
+    weather_temperature: Optional[float] = Form(None),
+    weather_rainfall: Optional[float] = Form(None),
+    growth_stage: Optional[str] = Form(None),
+    current_user: CurrentUser = Depends(get_current_user)
+):
+    DISEASE_API_URL = "http://localhost:8001/predict"
+
+    form_data = {
+        "include_explanation": (None, str(include_explanation).lower()),
+    }
+    if weather_humidity is not None:
+        form_data["weather_humidity"] = (None, str(weather_humidity))
+    if weather_temperature is not None:
+        form_data["weather_temperature"] = (None, str(weather_temperature))
+    if weather_rainfall is not None:
+        form_data["weather_rainfall"] = (None, str(weather_rainfall))
+    if growth_stage is not None:
+        form_data["growth_stage"] = (None, growth_stage)
+
+    try:
+        file_bytes = file.file.read()
+        files = {"file": (file.filename, file_bytes, file.content_type)}
+        response = requests.post(
+            DISEASE_API_URL,
+            files=files,
+            data={k: v[1] for k, v in form_data.items()},
+            timeout=60
+        )
+        response.raise_for_status()
+        return JSONResponse(content=response.json())
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(status_code=503, detail="Disease detection service is unavailable")
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Disease detection service timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/market/predict")

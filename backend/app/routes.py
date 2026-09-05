@@ -7,24 +7,14 @@ from fastapi.responses import JSONResponse
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 
-try:
-    from .model_loader import model, encoder, predict_price
-    from .schemas import CropInput, UserRegister, SendOTPRequest, VerifyOTPRequest, MarketPriceRequest
-    from .farm_schema import Farm
-    from .irrigation_report_schema import IrrigationReport
-    from .auth import CurrentUser, create_access_token, get_current_user
-    from .database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history
-    from .database import connection
-    from irrigation.irrigation_service import IrrigationService
-except ImportError:
-    from model_loader import model, encoder, predict_price
-    from schemas import CropInput, UserRegister, SendOTPRequest, VerifyOTPRequest, MarketPriceRequest
-    from farm_schema import Farm
-    from irrigation_report_schema import IrrigationReport
-    from auth import CurrentUser, create_access_token, get_current_user
-    from database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history
-    from database import connection
-    from irrigation.irrigation_service import IrrigationService
+from .model_loader import model, encoder, predict_price
+from .schemas import CropInput, UserRegister, SendOTPRequest, VerifyOTPRequest, MarketPriceRequest
+from .farm_schema import Farm
+from .irrigation_report_schema import IrrigationReport
+from .auth import CurrentUser, create_access_token, get_current_user
+from .database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history
+from .database import connection
+from irrigation.irrigation_service import IrrigationService
 
 router = APIRouter()
 

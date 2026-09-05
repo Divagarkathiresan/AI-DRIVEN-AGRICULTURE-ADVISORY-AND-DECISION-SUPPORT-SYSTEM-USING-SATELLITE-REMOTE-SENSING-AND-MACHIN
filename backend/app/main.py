@@ -1,14 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-try:
-    from .routes import router
-    from .database import connection as db_conn
-    from .database.connection import connect
-except ImportError:
-    from routes import router
-    import database.connection as db_conn
-    from database.connection import connect
+from .routes import router
+from .database import connection as db_conn
+from .database.connection import connect
 
 app = FastAPI(
     title="Smart Agriculture Advisory API",

@@ -1,7 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router, usePathname } from "expo-router";
-import { Home, MessageCircle, Plus, Store, UserRound } from "lucide-react-native";
+import { Home, Leaf, MessageCircle, Plus, Store, UserRound } from "lucide-react-native";
 
 import { palette, radius, shadow } from "@/theme/agriculture";
 
@@ -10,6 +10,7 @@ const tabs = [
   { label: "Advisory", path: "/predict-crop", Icon: MessageCircle },
   { label: "", path: "/add-farm", Icon: Plus, center: true },
   { label: "Farms", path: "/farms", Icon: Store },
+  { label: "Disease", path: "/disease-prediction", Icon: Leaf },
   { label: "Profile", path: "/profile", Icon: UserRound },
 ];
 

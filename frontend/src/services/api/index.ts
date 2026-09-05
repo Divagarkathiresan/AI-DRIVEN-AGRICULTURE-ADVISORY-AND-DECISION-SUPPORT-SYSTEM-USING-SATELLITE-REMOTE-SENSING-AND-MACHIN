@@ -1,6 +1,9 @@
 import type { CropPredictionInput, CropPredictionResult, Farm, FarmFormValues, IrrigationReport } from "@/types/domain";
 
-import { apiClient } from "./client";
+import { create } from "axios";
+import { Platform } from "react-native";
+
+import { apiClient, getApiBaseUrl } from "./client";
 
 export type RegisterPayload = {
   uid?: string;
@@ -126,4 +129,78 @@ export const fetchFarmIrrigationReports = async (farmId: string): Promise<Irriga
     const dayB = typeof b.crop_day === "number" ? b.crop_day : Number.MAX_SAFE_INTEGER;
     return dayA - dayB;
   });
+};
+
+export type DiseasePredictionResult = {
+  predicted_class?: string;
+  crop?: string;
+  disease?: string;
+  confidence?: number;
+  risk_level?: string;
+  class_probabilities?: Record<string, number>;
+  risk_assessment?: {
+    risk_level?: string;
+    base_risk?: string;
+    confidence?: number;
+    disease_severity?: string;
+    risk_factors?: string[];
+    risk_multiplier?: number;
+    assessment_timestamp?: string;
+    recommendations?: string[];
+  };
+  disease_info?: {
+    description?: string;
+    symptoms?: string[];
+    solutions?: string[];
+    prevention?: string[];
+  };
+  prediction_timestamp?: string;
+  explanation?: {
+    explanation_image?: string;
+    predicted_class?: string;
+    confidence?: number;
+    error?: string;
+    save_path?: string;
+  };
+};
+
+export const DISEASE_API_BASE_URL = process.env.EXPO_PUBLIC_DISEASE_API_BASE_URL || getApiBaseUrl(8000);
+const DISEASE_PREDICT_PATH = process.env.EXPO_PUBLIC_DISEASE_PREDICT_PATH || "/disease/predict";
+
+const diseaseApiClient = create({
+  baseURL: DISEASE_API_BASE_URL,
+  timeout: 60000,
+});
+
+export const predictDisease = async (payload: {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  includeExplanation?: boolean;
+}): Promise<DiseasePredictionResult> => {
+  const formData = new FormData();
+  formData.append("include_explanation", String(payload.includeExplanation ?? true));
+
+  const fileName = payload.fileName || "leaf-image.jpg";
+  const mimeType = payload.mimeType || "image/jpeg";
+
+  if (Platform.OS === "web") {
+    const imageResponse = await fetch(payload.uri);
+    const imageBlob = await imageResponse.blob();
+    const imageFile = new File([imageBlob], fileName, { type: imageBlob.type || mimeType });
+    formData.append("file", imageFile);
+  } else {
+    formData.append("file", {
+      uri: payload.uri,
+      name: fileName,
+      type: mimeType,
+    } as never);
+  }
+
+  const client = DISEASE_API_BASE_URL === getApiBaseUrl(8000) ? apiClient : diseaseApiClient;
+  const { data } = await client.post(DISEASE_PREDICT_PATH, formData, {
+    headers: Platform.OS === "web" ? undefined : { "Content-Type": "multipart/form-data" },
+  });
+
+  return data;
 };

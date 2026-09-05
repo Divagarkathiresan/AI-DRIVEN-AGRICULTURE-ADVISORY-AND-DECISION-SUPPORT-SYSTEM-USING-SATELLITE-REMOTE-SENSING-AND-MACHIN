@@ -57,6 +57,10 @@ device = None
 def load_model_and_components():
     """Load trained model and initialize components"""
     global model, explainer, risk_calculator, class_names, device
+
+    model = None
+    explainer = None
+    risk_calculator = None
     
     try:
         # Set device
@@ -86,8 +90,8 @@ def load_model_and_components():
         model_path = 'models/crop_disease_v3_model.pth'
         
         if os.path.exists(model_path):
-            model = CropDiseaseResNet50(num_classes=len(class_names), pretrained=False)
-            checkpoint = torch.load(model_path, map_location=device)
+            loaded_model = CropDiseaseResNet50(num_classes=len(class_names), pretrained=False)
+            checkpoint = torch.load(model_path, map_location=device, weights_only=False)
             
             # Handle checkpoint format from crop_disease_v3_model.pth
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
@@ -98,15 +102,17 @@ def load_model_and_components():
             else:
                 state_dict = checkpoint
             
-            model.load_state_dict(state_dict, strict=True)
-            model.to(device)
-            model.eval()
+            loaded_model.load_state_dict(state_dict, strict=True)
+            loaded_model.to(device)
+            loaded_model.eval()
+            model = loaded_model
             print(f"Model loaded from {model_path}")
         else:
             print("Warning: No trained model found. Creating untrained model for API structure.")
-            model = CropDiseaseResNet50(num_classes=len(class_names), pretrained=True)
-            model.to(device)
-            model.eval()
+            loaded_model = CropDiseaseResNet50(num_classes=len(class_names), pretrained=True)
+            loaded_model.to(device)
+            loaded_model.eval()
+            model = loaded_model
         
         # Initialize explainer
         explainer = CropDiseaseExplainer(model, class_names, device)
@@ -179,8 +185,10 @@ async def predict_disease(
         JSON response with prediction, risk assessment, and explanation
     """
     
-    if not model:
+    if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
+    if risk_calculator is None:
+        raise HTTPException(status_code=503, detail="Risk calculator not loaded")
     
     try:
         # Validate file type
@@ -201,7 +209,9 @@ async def predict_disease(
         
         input_tensor = transform(image).unsqueeze(0).to(device)
         
-        # Make prediction
+        # Make prediction. Keep the model in inference mode for single-image
+        # requests; BatchNorm1d cannot compute training stats for batch size 1.
+        model.eval()
         with torch.no_grad():
             outputs = model(input_tensor)
             probabilities = F.softmax(outputs, dim=1)
@@ -332,8 +342,10 @@ async def batch_predict(files: list[UploadFile] = File(...)):
         JSON response with predictions for all images
     """
     
-    if not model:
+    if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
+    if risk_calculator is None:
+        raise HTTPException(status_code=503, detail="Risk calculator not loaded")
     
     if len(files) > 10:  # Limit batch size
         raise HTTPException(status_code=400, detail="Maximum 10 images per batch")
@@ -364,6 +376,7 @@ async def batch_predict(files: list[UploadFile] = File(...)):
                 
                 input_tensor = transform(image).unsqueeze(0).to(device)
                 
+                model.eval()
                 with torch.no_grad():
                     outputs = model(input_tensor)
                     probabilities = F.softmax(outputs, dim=1)

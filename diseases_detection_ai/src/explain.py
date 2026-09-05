@@ -205,6 +205,7 @@ class CropDiseaseExplainer:
     
     def _generate_pytorch_gradcam(self, input_tensor, original_image, target_idx):
         """Generate Grad-CAM using pytorch-grad-cam library"""
+        self.model.eval()
         targets = [ClassifierOutputTarget(target_idx)]
         
         # Resize original image for overlay
@@ -235,6 +236,7 @@ class CropDiseaseExplainer:
     def _generate_simple_attention(self, input_tensor, original_image, target_idx):
         """Generate simple attention map as fallback"""
         print("Using simple attention fallback method...")
+        self.model.eval()
         
         # Enable gradients
         input_tensor.requires_grad_(True)

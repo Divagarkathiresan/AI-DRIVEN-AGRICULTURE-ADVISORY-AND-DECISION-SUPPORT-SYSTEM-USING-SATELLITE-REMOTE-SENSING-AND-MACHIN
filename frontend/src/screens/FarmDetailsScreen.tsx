@@ -24,12 +24,13 @@ type HealthPoint = {
 };
 
 export function FarmDetailsScreen() {
-  const params = useLocalSearchParams<{ farmId?: string }>();
+  const params = useLocalSearchParams<{ farmId?: string; backToFarms?: string }>();
   const selectedFarm = useAppStore((state) => state.selectedFarm);
   const farmId = Array.isArray(params.farmId) ? params.farmId[0] : params.farmId;
   const reportFilterParam = Array.isArray((params as { reportFilter?: string | string[] }).reportFilter)
     ? (params as { reportFilter?: string[] }).reportFilter?.[0]
     : (params as { reportFilter?: string }).reportFilter;
+  const backToFarmsParam = Array.isArray(params.backToFarms) ? params.backToFarms[0] : params.backToFarms;
   const { data, error, isLoading, refetch } = useQuery({
     queryKey: ["farm-irrigation", farmId],
     queryFn: () => fetchFarmIrrigationReport(farmId || ""),
@@ -49,6 +50,10 @@ export function FarmDetailsScreen() {
   const [dailyPage, setDailyPage] = useState(0);
 
   const goBack = () => {
+    if (backToFarmsParam === "true") {
+      router.replace("/farms" as never);
+      return;
+    }
     if (router.canGoBack()) {
       router.back();
       return;
@@ -382,10 +387,8 @@ function CropHealthScoreChart({ reports, isLoading }: { reports: IrrigationRepor
               Day {points[index].day ?? index + 1}
             </SvgText>
           ))}
-          <SvgText x={12} y={padTop + chartHeight / 2} fontSize="10" fill={palette.caption} rotation="-90" origin={`${12},${padTop + chartHeight / 2}`} textAnchor="middle">
-            Health Score
-          </SvgText>
         </Svg>
+        <Text style={styles.chartYAxisLabel}>Health Score</Text>
         {activePoint ? (
           <View style={styles.chartTooltip}>
             <Text style={styles.tooltipTitle}>Day {activePoint.day ?? placeholder}</Text>
@@ -815,6 +818,17 @@ const styles = StyleSheet.create({
   },
   chartCard: {
     gap: 12,
+  },
+  chartYAxisLabel: {
+    position: "absolute",
+    left: -22,
+    top: 96,
+    width: 90,
+    color: palette.caption,
+    fontSize: 10,
+    fontWeight: "800",
+    textAlign: "center",
+    transform: [{ rotate: "-90deg" }],
   },
   chartWrap: {
     minHeight: 230,

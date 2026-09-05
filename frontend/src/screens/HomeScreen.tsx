@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { router } from "expo-router";
 import { Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { Bell, CloudSun, Leaf, Menu, MessageCircle, Sprout, Store, TestTube2 } from "lucide-react-native";
+import { CloudSun, Leaf, Menu, MessageCircle, Sprout, Store, TestTube2, UserRound } from "lucide-react-native";
 
 import { AppScreen } from "@/components/screen";
 import { Card, SectionHeader } from "@/components/ui";
@@ -31,8 +31,8 @@ export function HomeScreen() {
         <Pressable style={styles.iconButton} accessibilityLabel="Open menu">
           <Menu size={21} color={palette.text} />
         </Pressable>
-        <Pressable style={styles.iconButton} accessibilityLabel="Notifications">
-          <Bell size={20} color={palette.text} />
+        <Pressable style={styles.iconButton} accessibilityLabel="Profile" onPress={() => router.push("/profile" as never)}>
+          <UserRound size={20} color={palette.text} />
         </Pressable>
       </View>
 
@@ -64,7 +64,7 @@ export function HomeScreen() {
         <QuickAction title="Crop Recommendation" icon={<Sprout size={22} color={palette.primary} />} onPress={() => router.push("/predict-crop" as never)} />
         <QuickAction title="AI Advisory" icon={<MessageCircle size={22} color={palette.primary} />} onPress={() => router.push("/predict-crop" as never)} />
         <QuickAction title="Farms" icon={<Store size={22} color={palette.primary} />} onPress={() => router.push("/farms" as never)} />
-        <QuickAction title="Farm Details" icon={<Leaf size={22} color={palette.primary} />} onPress={() => router.push("/farms" as never)} />
+        <QuickAction title="Disease Prediction" icon={<Leaf size={22} color={palette.primary} />} onPress={() => router.push("/disease-prediction" as never)} />
       </View>
 
       <SectionHeader title="Farm Overview" />

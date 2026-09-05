@@ -1,9 +1,9 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router, usePathname } from "expo-router";
-import { Home, Leaf, MessageCircle, Plus, Store, UserRound } from "lucide-react-native";
+import { Home, Leaf, MessageCircle, Plus, Store } from "lucide-react-native";
 
-import { palette, radius, shadow } from "@/theme/agriculture";
+import { palette, shadow } from "@/theme/agriculture";
 
 const tabs = [
   { label: "Home", path: "/homepage", Icon: Home },
@@ -11,7 +11,6 @@ const tabs = [
   { label: "", path: "/add-farm", Icon: Plus, center: true },
   { label: "Farms", path: "/farms", Icon: Store },
   { label: "Disease", path: "/disease-prediction", Icon: Leaf },
-  { label: "Profile", path: "/profile", Icon: UserRound },
 ];
 
 export function BottomNav() {
@@ -49,26 +48,26 @@ export function BottomNav() {
 const styles = StyleSheet.create({
   nav: {
     position: "absolute",
-    left: 14,
-    right: 14,
+    left: 12,
+    right: 12,
     bottom: 12,
-    minHeight: 72,
-    borderRadius: radius.xl,
+    minHeight: 68,
+    borderRadius: 34,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.78)",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
-    paddingHorizontal: 8,
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
     ...shadow,
   },
   item: {
-    flex: 1,
-    minHeight: 58,
+    width: 62,
+    minHeight: 54,
     alignItems: "center",
     justifyContent: "center",
-    gap: 3,
+    gap: 4,
   },
   label: {
     color: palette.caption,
@@ -76,24 +75,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   centerItem: {
-    flex: 1,
+    width: 66,
     alignItems: "center",
     justifyContent: "center",
   },
   plusButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: palette.primary,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: -28,
+    marginTop: -24,
     ...shadow,
   },
   iconBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 9,
+    width: 30,
+    height: 30,
+    borderRadius: 12,
     backgroundColor: "rgba(240, 244, 236, 0.58)",
     alignItems: "center",
     justifyContent: "center",

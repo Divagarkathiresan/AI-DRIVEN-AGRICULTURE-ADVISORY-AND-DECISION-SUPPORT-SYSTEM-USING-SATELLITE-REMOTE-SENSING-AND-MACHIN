@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { router, useLocalSearchParams } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { z } from "zod";
 
 import { Illustration } from "@/components/illustrations";
@@ -138,6 +138,7 @@ export function OtpScreen() {
   const { phone, name } = useLocalSearchParams<{ phone?: string; name?: string }>();
   const toast = useToast();
   const hasAutoSubmitted = React.useRef(false);
+  const otpInputRef = useRef<TextInput>(null);
   const setAuthenticated = useAppStore((state) => state.setAuthenticated);
   const { control, handleSubmit, formState, setValue } = useForm<OtpForm>({
     resolver: zodResolver(otpSchema),
@@ -189,22 +190,26 @@ export function OtpScreen() {
         name="otp"
         render={({ field, fieldState }) => (
           <>
-            <Pressable onPress={() => undefined} style={styles.otpBoxes}>
+            <Pressable onPress={() => otpInputRef.current?.focus()} style={styles.otpBoxes}>
               {Array.from({ length: 6 }).map((_, index) => (
                 <View key={index} style={[styles.otpBox, fieldState.error && styles.otpError]}>
                   <Text style={styles.otpDigit}>{field.value?.[index] || ""}</Text>
                 </View>
               ))}
+              <TextInput
+                ref={otpInputRef}
+                value={field.value}
+                onChangeText={(value) => field.onChange(value.replace(/\D/g, "").slice(0, 6))}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                textContentType="oneTimeCode"
+                autoComplete="one-time-code"
+                maxLength={6}
+                autoFocus
+                style={styles.otpInputOverlay}
+              />
             </Pressable>
-            <FieldInput
-              label="OTP"
-              value={field.value}
-              onChangeText={(value) => field.onChange(value.replace(/\D/g, ""))}
-              keyboardType="number-pad"
-              maxLength={6}
-              error={fieldState.error?.message}
-              style={styles.hiddenOtpInput}
-            />
+            {!!fieldState.error?.message && <Text style={styles.otpErrorText}>{fieldState.error.message}</Text>}
           </>
         )}
       />
@@ -267,6 +272,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     justifyContent: "space-between",
+    position: "relative",
   },
   otpBox: {
     width: 44,
@@ -286,9 +292,16 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "900",
   },
-  hiddenOtpInput: {
-    opacity: 0.02,
-    height: 1,
+  otpInputOverlay: {
+    position: "absolute",
+    inset: 0,
+    opacity: 0.01,
+    color: "transparent",
+  },
+  otpErrorText: {
+    color: palette.danger,
+    fontSize: 12,
+    fontWeight: "600",
   },
   resend: {
     color: palette.primary,

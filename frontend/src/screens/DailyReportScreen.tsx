@@ -40,7 +40,7 @@ export function DailyReportScreen() {
 
   const goBack = () => {
     if (farmId) {
-      router.replace({ pathname: "/farm-details" as never, params: { farmId, reportFilter } });
+      router.replace({ pathname: "/farm-details" as never, params: { farmId, reportFilter, backToFarms: "true" } });
       return;
     }
     router.replace("/farms" as never);
@@ -95,8 +95,7 @@ export function DailyReportScreen() {
 
   const cropName = report.crop_name || selectedFarm?.crop_name || "";
   const expectedStage = getExpectedStageForDay(cropName, report.crop_day);
-  const satelliteUrl = normalizeUrl(report.satellite?.satellite_image_url);
-  const ndviUrl = normalizeUrl(report.satellite?.ndvi_image_url);
+  const ndviUrl = getReportImageUrl(report, selectedFarm?.farm_name, "ndvi_image_url", "ndvi.png");
 
   return (
     <AppScreen>
@@ -152,7 +151,6 @@ export function DailyReportScreen() {
         </View>
       </Card>
 
-      <ImageCard title="Satellite Image" url={satelliteUrl} placeholderText="Satellite image unavailable" />
       <ImageCard title="NDVI Visualization" url={ndviUrl} placeholderText="NDVI image unavailable" />
 
       <Card style={styles.card}>
@@ -263,6 +261,25 @@ function DailySkeleton() {
 const normalizeUrl = (raw?: string | null) => {
   if (!raw || raw === "satellite_url") return "";
   return raw.startsWith("http") ? raw : `${API_BASE_URL}${raw.startsWith("/") ? "" : "/"}${raw}`;
+};
+
+const getReportImageUrl = (
+  report: IrrigationReport,
+  farmName: string | undefined,
+  field: "satellite_image_url" | "ndvi_image_url",
+  fileName: "satellite.png" | "ndvi.png",
+) => {
+  const raw = report.satellite?.[field];
+  if (raw && raw !== fileName) {
+    return normalizeUrl(raw);
+  }
+
+  if (!farmName || !report.report_date) {
+    return normalizeUrl(raw);
+  }
+
+  const safeFarmName = farmName.replace(/[^\w-]/g, "_");
+  return `${API_BASE_URL}/output/ndvi_images/${safeFarmName}_${report.report_date}/${fileName}`;
 };
 
 const formatNumber = (value?: number | null, digits = 1) =>

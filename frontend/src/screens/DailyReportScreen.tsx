@@ -8,7 +8,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { AppScreen } from "@/components/screen";
 import { AppButton, Card, SectionHeader } from "@/components/ui";
 import { getExpectedStageForDay } from "@/constants/cropLifecycle";
-import { fetchFarmIrrigationReports } from "@/services/api";
+import { fetchFarmIrrigationReport, fetchFarmIrrigationReports } from "@/services/api";
 import { API_BASE_URL } from "@/services/api/client";
 import { useAppStore } from "@/store/appStore";
 import { palette } from "@/theme/agriculture";
@@ -17,10 +17,11 @@ import type { IrrigationReport } from "@/types/domain";
 const placeholder = "--";
 
 export function DailyReportScreen() {
-  const params = useLocalSearchParams<{ farmId?: string; cropDay?: string }>();
+  const params = useLocalSearchParams<{ farmId?: string; cropDay?: string; reportDate?: string }>();
   const selectedFarm = useAppStore((state) => state.selectedFarm);
   const farmId = Array.isArray(params.farmId) ? params.farmId[0] : params.farmId;
   const cropDayParam = Array.isArray(params.cropDay) ? params.cropDay[0] : params.cropDay;
+  const reportDate = Array.isArray(params.reportDate) ? params.reportDate[0] : params.reportDate;
   const reportFilter = Array.isArray((params as { reportFilter?: string | string[] }).reportFilter)
     ? (params as { reportFilter?: string[] }).reportFilter?.[0]
     : (params as { reportFilter?: string }).reportFilter;
@@ -33,10 +34,25 @@ export function DailyReportScreen() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const report = useMemo(
-    () => data.find((item) => item.crop_day === cropDay),
-    [cropDay, data],
+  const listReport = useMemo(
+    () => data.find((item) => item.crop_day === cropDay || (reportDate && item.report_date === reportDate)),
+    [cropDay, data, reportDate],
   );
+
+  const {
+    data: directReport,
+    error: directReportError,
+    isLoading: directReportLoading,
+    refetch: refetchDirectReport,
+  } = useQuery({
+    queryKey: ["farm-irrigation", farmId, reportDate || cropDay],
+    queryFn: () => fetchFarmIrrigationReport(farmId || "", reportDate),
+    enabled: Boolean(farmId) && !listReport,
+  });
+
+  const report = listReport || directReport;
+  const loadingReport = isLoading || (!listReport && directReportLoading);
+  const reportError = error || (!listReport ? directReportError : null);
 
   const goBack = () => {
     if (farmId) {
@@ -58,7 +74,7 @@ export function DailyReportScreen() {
     );
   }
 
-  if (isLoading) {
+  if (loadingReport) {
     return (
       <AppScreen>
         <Header title={`Day ${cropDay}`} subtitle="Loading daily report..." onBack={goBack} />
@@ -67,14 +83,17 @@ export function DailyReportScreen() {
     );
   }
 
-  if (error) {
+  if (reportError) {
     return (
       <AppScreen>
         <Header title={`Day ${cropDay}`} subtitle="Daily Irrigation Report" onBack={goBack} />
         <Card style={styles.centerCard}>
           <Text style={styles.errorTitle}>Unable to load irrigation report.</Text>
           <Text style={styles.muted}>Please try again.</Text>
-          <AppButton title="Retry" onPress={() => refetch()} />
+          <AppButton title="Retry" onPress={() => {
+            refetch();
+            refetchDirectReport();
+          }} />
         </Card>
       </AppScreen>
     );

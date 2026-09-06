@@ -28,9 +28,9 @@ export function HomeScreen() {
   return (
     <AppScreen withNav>
       <View style={styles.topBar}>
-        <Pressable style={styles.iconButton} accessibilityLabel="Open menu">
+        {/* <Pressable style={styles.iconButton} accessibilityLabel="Open menu">
           <Menu size={21} color={palette.text} />
-        </Pressable>
+        </Pressable> */}
         <Pressable style={styles.iconButton} accessibilityLabel="Profile" onPress={() => router.push("/profile" as never)}>
           <UserRound size={20} color={palette.text} />
         </Pressable>

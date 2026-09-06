@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, MapPin } from "lucide-react-native";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, MapPin, X } from "lucide-react-native";
+import { Animated, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, G, Line, Polyline, Text as SvgText } from "react-native-svg";
 
 import { AppScreen } from "@/components/screen";
 import { Illustration } from "@/components/illustrations";
 import { AnimatedCard, AppButton, Card, SectionHeader } from "@/components/ui";
-import { fetchFarmIrrigationReport, fetchFarmIrrigationReports } from "@/services/api";
+import { fetchFarmIrrigationReport, fetchFarmIrrigationReports, predictMarketPrice, type MarketPredictionResult } from "@/services/api";
 import { useAppStore } from "@/store/appStore";
 import { palette } from "@/theme/agriculture";
 import { formatCropName, getCropLifecycle, getExpectedStageForDay } from "@/constants/cropLifecycle";
@@ -23,6 +23,8 @@ type HealthPoint = {
   score: number;
 };
 
+const DEFAULT_MARKET = "Coimbatore, Tamil Nadu, India";
+
 export function FarmDetailsScreen() {
   const params = useLocalSearchParams<{ farmId?: string; backToFarms?: string }>();
   const selectedFarm = useAppStore((state) => state.selectedFarm);
@@ -31,9 +33,10 @@ export function FarmDetailsScreen() {
     ? (params as { reportFilter?: string[] }).reportFilter?.[0]
     : (params as { reportFilter?: string }).reportFilter;
   const backToFarmsParam = Array.isArray(params.backToFarms) ? params.backToFarms[0] : params.backToFarms;
+  const todayReportDate = useMemo(() => getTodayDateString(), []);
   const { data, error, isLoading, refetch } = useQuery({
-    queryKey: ["farm-irrigation", farmId],
-    queryFn: () => fetchFarmIrrigationReport(farmId || ""),
+    queryKey: ["farm-irrigation", farmId, todayReportDate],
+    queryFn: () => fetchFarmIrrigationReport(farmId || "", todayReportDate),
     enabled: Boolean(farmId),
   });
   const {
@@ -48,6 +51,26 @@ export function FarmDetailsScreen() {
     staleTime: 1000 * 60 * 5,
   });
   const [dailyPage, setDailyPage] = useState(0);
+  const [marketDialogVisible, setMarketDialogVisible] = useState(false);
+  const farmCrop = selectedFarm?.crop_name || data?.crop_name || "";
+  const displayedReports = useMemo(
+    () => mergeCurrentReport(dailyReports, data, farmId),
+    [dailyReports, data, farmId],
+  );
+  const maxCropDay = useMemo(
+    () =>
+      displayedReports.reduce((maxDay, report) => {
+        if (typeof report.crop_day !== "number" || !Number.isFinite(report.crop_day)) return maxDay;
+        return Math.max(maxDay, report.crop_day);
+      }, 0),
+    [displayedReports],
+  );
+  const canPredictMarketValue = maxCropDay >= 120;
+
+  useEffect(() => {
+    if (!farmId || !data) return;
+    refetchDailyReports();
+  }, [data, farmId, refetchDailyReports]);
 
   const goBack = () => {
     if (backToFarmsParam === "true") {
@@ -98,19 +121,22 @@ export function FarmDetailsScreen() {
               <InfoRow label="Farm Unit" value={data?.water_requirement?.unit || selectedFarm?.area?.unit || placeholder} />
               <InfoRow label="Crop Name" value={data?.crop_name || selectedFarm?.crop_name || placeholder} />
               <InfoRow label="Location" value={formatLocation(selectedFarm?.location, data?.location)} icon={<MapPin size={16} color={palette.primary} />} />
+              {canPredictMarketValue ? (
+                <AppButton title="Predict Market Value" onPress={() => setMarketDialogVisible(true)} />
+              ) : null}
             </Card>
           </AnimatedCard>
 
           <AnimatedCard delay={360}>
-            <CropHealthScoreChart reports={dailyReports} isLoading={dailyReportsLoading} />
+            <CropHealthScoreChart reports={displayedReports} isLoading={dailyReportsLoading && displayedReports.length === 0} />
           </AnimatedCard>
 
           <AnimatedCard delay={300}>
             <DailyReportsSection
               farmId={farmId}
-              farmCrop={selectedFarm?.crop_name || data?.crop_name}
-              reports={dailyReports}
-              isLoading={dailyReportsLoading}
+              farmCrop={farmCrop}
+              reports={displayedReports}
+              isLoading={dailyReportsLoading && displayedReports.length === 0}
               error={dailyReportsError as Error | null}
               page={dailyPage}
               initialFilter={reportFilterParam}
@@ -118,9 +144,111 @@ export function FarmDetailsScreen() {
               onRetry={() => refetchDailyReports()}
             />
           </AnimatedCard>
+          <MarketValueDialog
+            visible={marketDialogVisible}
+            crop={farmCrop}
+            onClose={() => setMarketDialogVisible(false)}
+          />
         </>
       )}
     </AppScreen>
+  );
+}
+
+function MarketValueDialog({ visible, crop, onClose }: { visible: boolean; crop: string; onClose: () => void }) {
+  const [market, setMarket] = useState(DEFAULT_MARKET);
+  const [variety, setVariety] = useState("");
+  const [varietyOpen, setVarietyOpen] = useState(false);
+  const varietyOptions = useMemo(() => getVarietyOptions(crop), [crop]);
+  const mutation = useMutation<MarketPredictionResult, Error, { crop: string; market: string; variety: string }>({
+    mutationFn: predictMarketPrice,
+  });
+  const prediction = mutation.data ?? null;
+
+  const resetDialog = () => {
+    setMarket(DEFAULT_MARKET);
+    setVariety(varietyOptions[0]);
+    setVarietyOpen(false);
+    mutation.reset();
+  };
+
+  const runPrediction = () => {
+    const cropName = formatCropName(crop || "Potato");
+    const marketName = market.trim() || DEFAULT_MARKET;
+    const varietyName = variety || varietyOptions[0];
+    mutation.mutate({ crop: cropName, market: marketName, variety: varietyName });
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} onShow={resetDialog}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.marketDialog}>
+          <Pressable style={styles.dialogCloseButton} onPress={onClose} accessibilityLabel="Close market value dialog">
+            <X size={20} color={palette.text} />
+          </Pressable>
+          <Text style={styles.dialogTitle}>Predict Market Value</Text>
+          <Text style={styles.dialogSubtitle}>Crop: {formatCropName(crop || "Potato")}</Text>
+          <View style={styles.dialogField}>
+            <Text style={styles.dialogLabel}>Market / Location</Text>
+            <TextInput
+              value={market}
+              onChangeText={setMarket}
+              placeholder={DEFAULT_MARKET}
+              placeholderTextColor="#8C9685"
+              style={styles.dialogInput}
+            />
+          </View>
+          <View style={styles.dialogField}>
+            <Text style={styles.dialogLabel}>Variety</Text>
+            <Pressable style={styles.varietySelect} onPress={() => setVarietyOpen((value) => !value)} accessibilityLabel="Select variety">
+              <Text style={styles.varietySelectText}>{variety || varietyOptions[0]}</Text>
+              <ChevronDown size={18} color={palette.primary} />
+            </Pressable>
+            {varietyOpen ? (
+              <View style={styles.varietyMenu}>
+                {varietyOptions.map((option) => {
+                  const active = option === (variety || varietyOptions[0]);
+                  return (
+                    <Pressable
+                      key={option}
+                      style={[styles.varietyOption, active && styles.activeVarietyOption]}
+                      onPress={() => {
+                        setVariety(option);
+                        setVarietyOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.varietyOptionText, active && styles.activeVarietyOptionText]}>{option}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+          </View>
+          <AppButton title="Predict" loading={mutation.isPending} onPress={runPrediction} />
+          {mutation.error ? <Text style={styles.dialogError}>{mutation.error.message || "Unable to predict market price."}</Text> : null}
+          {prediction ? (
+            <View style={styles.predictionBox}>
+              <Text style={styles.predictionHeading}>Market Value Prediction</Text>
+              <PredictionRow label="Crop" value={prediction.crop} />
+              <PredictionRow label="Market" value={prediction.market} />
+              <PredictionRow label="Variety" value={prediction.variety} />
+              <PredictionRow label="Current Price" value={`₹${prediction.current_price.toFixed(2)}`} />
+              <PredictionRow label="Predicted Price" value={`₹${prediction.predicted_price.toFixed(2)}`} highlight />
+              <PredictionRow label="Prediction Date" value={prediction.prediction_date} />
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PredictionRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <View style={[styles.predictionRow, highlight && styles.highlightPredictionRow]}>
+      <Text style={styles.predictionLabel}>{label}</Text>
+      <Text style={[styles.predictionValue, highlight && styles.highlightPredictionValue]}>{value}</Text>
+    </View>
   );
 }
 
@@ -187,7 +315,15 @@ function DailyReportsSection({
 
   const openReport = (report: IrrigationReport) => {
     if (typeof report.crop_day !== "number") return;
-    router.push({ pathname: "/daily-report" as never, params: { farmId, cropDay: String(report.crop_day), reportFilter: selectedFilter } });
+    router.push({
+      pathname: "/daily-report" as never,
+      params: {
+        farmId,
+        cropDay: String(report.crop_day),
+        reportDate: report.report_date || "",
+        reportFilter: selectedFilter,
+      },
+    });
   };
 
   return (
@@ -249,11 +385,11 @@ function DailyReportsSection({
               <ChevronLeft size={20} color={page === 0 ? palette.caption : palette.primary} />
             </Pressable>
             <View style={styles.dayButtons}>
-              {visibleReports.map((report) => {
+              {visibleReports.map((report, index) => {
                 const active = report.crop_day === selectedDay;
                 return (
-                  <Pressable key={`${report.farm_id}-${report.crop_day}-${report.report_date}`} style={[styles.dayButton, active && styles.activeDayButton]} onPress={() => openReport(report)}>
-                    <Text style={[styles.dayText, active && styles.activeDayText]}>Day {report.crop_day ?? placeholder}</Text>
+                  <Pressable key={getReportKey(report, index)} style={[styles.dayButton, active && styles.activeDayButton]} onPress={() => openReport(report)}>
+                    <Text style={[styles.dayText, active && styles.activeDayText]}>{formatDayButtonLabel(report)}</Text>
                   </Pressable>
                 );
               })}
@@ -433,6 +569,56 @@ const formatReportDate = (value?: string | null) => {
   return date.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
 };
 
+const formatDayButtonLabel = (report: IrrigationReport) => {
+  if (typeof report.crop_day === "number") return `Day ${report.crop_day}`;
+  if (report.report_date) return formatReportDate(report.report_date);
+  return `Day ${placeholder}`;
+};
+
+const getVarietyOptions = (cropName?: string) => {
+  const normalized = (cropName || "").trim().toLowerCase();
+  if (normalized.includes("tomato")) return ["Deshi", "Hybrid"];
+  if (normalized.includes("potato")) return ["Red Nanital", "Other"];
+  if (normalized.includes("pepper")) return ["Pepper", "Black Pepper"];
+  return ["Other"];
+};
+
+const getReportIdentity = (report: IrrigationReport, fallbackIndex = 0) => {
+  if (report.report_date) return `date:${report.report_date}`;
+  if (typeof report.crop_day === "number") return `day:${report.crop_day}`;
+  return `index:${fallbackIndex}`;
+};
+
+const getReportKey = (report: IrrigationReport, index: number) => getReportIdentity(report, index);
+
+const mergeCurrentReport = (reports: IrrigationReport[], currentReport?: IrrigationReport, farmId?: string) => {
+  const mergedByKey = new Map<string, IrrigationReport>();
+  const sourceReports = currentReport ? [...reports, currentReport] : reports;
+
+  sourceReports.forEach((report, index) => {
+    const normalizedReport: IrrigationReport = {
+      ...report,
+      farm_id: report.farm_id || farmId || "",
+    };
+    mergedByKey.set(getReportIdentity(normalizedReport, index), normalizedReport);
+  });
+
+  return [...mergedByKey.values()].sort((a, b) => {
+    const dayA = typeof a.crop_day === "number" ? a.crop_day : Number.MAX_SAFE_INTEGER;
+    const dayB = typeof b.crop_day === "number" ? b.crop_day : Number.MAX_SAFE_INTEGER;
+    if (dayA !== dayB) return dayA - dayB;
+    return String(a.report_date || "").localeCompare(String(b.report_date || ""));
+  });
+};
+
+const getTodayDateString = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const getLabelIndexes = (count: number) => {
   if (count <= 5) return Array.from({ length: count }, (_, index) => index);
   const middle = Math.floor((count - 1) / 2);
@@ -470,6 +656,165 @@ const styles = StyleSheet.create({
   },
   card: {
     gap: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(21, 36, 20, 0.42)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18,
+  },
+  marketDialog: {
+    width: "100%",
+    maxWidth: 430,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: palette.border,
+    paddingHorizontal: 18,
+    paddingTop: 56,
+    paddingBottom: 18,
+    gap: 13,
+  },
+  dialogCloseButton: {
+    position: "absolute",
+    top: 14,
+    left: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    backgroundColor: palette.lightGreen,
+    borderWidth: 1,
+    borderColor: "#D8ECD6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dialogTitle: {
+    color: palette.text,
+    fontSize: 21,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  dialogSubtitle: {
+    color: palette.muted,
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  dialogField: {
+    gap: 7,
+  },
+  dialogLabel: {
+    color: palette.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  dialogInput: {
+    minHeight: 50,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#FBFEFA",
+    color: palette.text,
+    fontSize: 15,
+    fontWeight: "700",
+    paddingHorizontal: 14,
+  },
+  dialogError: {
+    color: palette.danger,
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  varietySelect: {
+    minHeight: 50,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: "#FBFEFA",
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  varietySelectText: {
+    color: palette.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  varietyMenu: {
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: palette.border,
+    padding: 6,
+    gap: 4,
+  },
+  varietyOption: {
+    minHeight: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  activeVarietyOption: {
+    backgroundColor: palette.primary,
+  },
+  varietyOptionText: {
+    color: palette.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  activeVarietyOptionText: {
+    color: "#FFFFFF",
+  },
+  predictionBox: {
+    borderRadius: 16,
+    backgroundColor: "#F3F8F0",
+    borderWidth: 1,
+    borderColor: "#DDEEDD",
+    padding: 12,
+    gap: 8,
+  },
+  predictionHeading: {
+    color: palette.text,
+    fontSize: 16,
+    fontWeight: "900",
+    marginBottom: 2,
+  },
+  predictionRow: {
+    minHeight: 42,
+    borderRadius: 13,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "rgba(221, 238, 221, 0.9)",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  highlightPredictionRow: {
+    backgroundColor: palette.lightGreen,
+    borderColor: "#CBE7C8",
+  },
+  predictionLabel: {
+    color: palette.caption,
+    fontSize: 12,
+    fontWeight: "800",
+    flex: 1,
+  },
+  predictionValue: {
+    color: palette.text,
+    fontSize: 14,
+    fontWeight: "900",
+    flex: 1,
+    textAlign: "right",
+  },
+  highlightPredictionValue: {
+    color: palette.primary,
+    fontSize: 16,
   },
   healthCard: {
     gap: 14,

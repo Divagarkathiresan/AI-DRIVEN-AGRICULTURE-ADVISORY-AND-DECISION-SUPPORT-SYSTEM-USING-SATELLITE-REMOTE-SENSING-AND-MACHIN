@@ -11,6 +11,21 @@ export type RegisterPayload = {
   phone: string;
 };
 
+export type MarketPredictionPayload = {
+  crop: string;
+  market: string;
+  variety: string;
+};
+
+export type MarketPredictionResult = {
+  crop: string;
+  market: string;
+  variety: string;
+  current_price: number;
+  predicted_price: number;
+  prediction_date: string;
+};
+
 export const registerUser = async (payload: RegisterPayload) => {
   const uid = payload.uid || payload.phone;
   const { data } = await apiClient.post("/register", { ...payload, uid });
@@ -53,6 +68,18 @@ export const predictCrop = async (payload: CropPredictionInput): Promise<CropPre
   };
 };
 
+export const predictMarketPrice = async (payload: MarketPredictionPayload): Promise<MarketPredictionResult> => {
+  const { data } = await apiClient.post("/market/predict", payload);
+  return {
+    crop: data?.crop ?? payload.crop,
+    market: data?.market ?? payload.market,
+    variety: data?.variety ?? payload.variety,
+    current_price: Number(data?.current_price ?? 0),
+    predicted_price: Number(data?.predicted_price ?? 0),
+    prediction_date: data?.prediction_date ?? new Date().toISOString().slice(0, 10),
+  };
+};
+
 export const createFarm = async (payload: FarmFormValues): Promise<Farm> => {
   const backendPayload = {
     ...payload,
@@ -82,9 +109,11 @@ export const fetchFarms = async (): Promise<Farm[]> => {
   return (data?.farms || []).map(normalizeFarm);
 };
 
-export const fetchFarmIrrigationReport = async (farmId: string): Promise<IrrigationReport> => {
+export const fetchFarmIrrigationReport = async (farmId: string, reportDate?: string): Promise<IrrigationReport> => {
   try {
-    const { data } = await apiClient.get(`/farm/${farmId}/irrigation`);
+    const { data } = await apiClient.get(`/farm/${farmId}/irrigation`, {
+      params: reportDate ? { report_date: reportDate } : undefined,
+    });
     return data;
   } catch (error: any) {
     if (String(error?.message || "").toLowerCase().includes("no satellite image")) {
@@ -124,11 +153,26 @@ export const fetchFarmIrrigationReport = async (farmId: string): Promise<Irrigat
 export const fetchFarmIrrigationReports = async (farmId: string): Promise<IrrigationReport[]> => {
   const { data } = await apiClient.get(`/farm/${farmId}/irrigation/reports`);
   const reports = Array.isArray(data) ? data : data?.reports || data?.irrigation_reports || [];
-  return [...reports].sort((a: IrrigationReport, b: IrrigationReport) => {
+  return keepLastReportByDate(reports).sort((a: IrrigationReport, b: IrrigationReport) => {
     const dayA = typeof a.crop_day === "number" ? a.crop_day : Number.MAX_SAFE_INTEGER;
     const dayB = typeof b.crop_day === "number" ? b.crop_day : Number.MAX_SAFE_INTEGER;
     return dayA - dayB;
   });
+};
+
+const keepLastReportByDate = (reports: IrrigationReport[]) => {
+  const reportsByDate = new Map<string, IrrigationReport>();
+  const reportsWithoutDate: IrrigationReport[] = [];
+
+  reports.forEach((report) => {
+    if (report.report_date) {
+      reportsByDate.set(report.report_date, report);
+      return;
+    }
+    reportsWithoutDate.push(report);
+  });
+
+  return [...reportsByDate.values(), ...reportsWithoutDate];
 };
 
 export type DiseasePredictionResult = {

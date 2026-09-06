@@ -33,8 +33,8 @@ const farmSchema = z.object({
     unit: z.enum(["acre", "hectare"]),
   }),
   location: z.object({
-    latitude: z.number(),
-    longitude: z.number(),
+    latitude: z.coerce.number().min(-90, "Latitude must be between -90 and 90").max(90, "Latitude must be between -90 and 90"),
+    longitude: z.coerce.number().min(-180, "Longitude must be between -180 and 180").max(180, "Longitude must be between -180 and 180"),
   }),
   soil_type: z.string().optional(),
   irrigation_type: z.string().optional(),
@@ -62,7 +62,7 @@ export function AddFarmScreen() {
     [auth.phone, auth.userId, draft, prediction?.recommended_crop],
   );
 
-  const { control, handleSubmit, reset, getValues, formState } = useForm<FarmFormValues>({
+  const { control, handleSubmit, reset, getValues, setValue, formState } = useForm<FarmFormValues>({
     resolver: zodResolver(farmSchema) as never,
     defaultValues: defaults,
   });
@@ -145,15 +145,17 @@ export function AddFarmScreen() {
         longitude,
       },
     });
+    setValue("location.latitude", latitude, { shouldDirty: true, shouldValidate: true });
+    setValue("location.longitude", longitude, { shouldDirty: true, shouldValidate: true });
     } catch (error) {
       console.log("Location Error:", error);
 
       toast.show(
-        "Unable to determine your current location. Please move to an open area and try again.",
+        "Unable to determine your current location. You can enter it manually.",
         "error"
       );
     }
-  }, [updateDraft, toast]);
+  }, [setValue, updateDraft, toast]);
 
   useEffect(() => {
   const timeout = setTimeout(() => {
@@ -180,23 +182,10 @@ export function AddFarmScreen() {
     router.push("/predict-crop" as never);
   };
 
-  if (locationDenied) {
-    return (
-      <AppScreen withNav scroll={false}>
-        <View style={styles.permission}>
-          <Text style={styles.permissionIcon}>GPS</Text>
-          <Text style={styles.permissionTitle}>Enable Location to Continue</Text>
-          <Text style={styles.permissionText}>Farm coordinates are required and cannot be entered manually.</Text>
-          <AppButton title="Retry" onPress={requestLocation} />
-        </View>
-      </AppScreen>
-    );
-  }
-
   return (
     <AppScreen withNav>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.form}>
-        <SectionHeader title="Add Farm" caption="Create a precise farm profile from your current GPS location." />
+        <SectionHeader title="Add Farm" caption="Create a farm profile with GPS or manually entered coordinates." />
         {success ? (
           <Card style={styles.successCard}>
             <Text style={styles.successIcon}>✓</Text>
@@ -248,14 +237,37 @@ export function AddFarmScreen() {
             <FieldInput label="Description" value={field.value} onChangeText={field.onChange} multiline />
           )} />
 
-          <Controller control={control} name="location" render={({ field }) => (
-            <View style={styles.locationBox}>
-              <Text style={styles.locationIcon}>GPS</Text>
-              <Text style={styles.locationText}>
-                {field.value.latitude.toFixed(5)}, {field.value.longitude.toFixed(5)}
-              </Text>
+          <View style={styles.locationSection}>
+            <View style={styles.locationHeader}>
+              <View>
+                <Text style={styles.locationTitle}>Farm Location</Text>
+                <Text style={styles.locationHint}>{locationDenied ? "GPS unavailable. Enter coordinates manually." : "Use GPS or edit coordinates manually."}</Text>
+              </View>
+              <AppButton title="Use GPS" variant="secondary" onPress={requestLocation} style={styles.gpsButton} />
             </View>
-          )} />
+            <View style={styles.row}>
+              <Controller control={control} name="location.latitude" render={({ field, fieldState }) => (
+                <FieldInput
+                  label="Latitude"
+                  value={String(field.value ?? "")}
+                  onChangeText={field.onChange}
+                  keyboardType="decimal-pad"
+                  error={fieldState.error?.message}
+                  style={styles.flexInput}
+                />
+              )} />
+              <Controller control={control} name="location.longitude" render={({ field, fieldState }) => (
+                <FieldInput
+                  label="Longitude"
+                  value={String(field.value ?? "")}
+                  onChangeText={field.onChange}
+                  keyboardType="decimal-pad"
+                  error={fieldState.error?.message}
+                  style={styles.flexInput}
+                />
+              )} />
+            </View>
+          </View>
 
           <AppButton title="Save Farm" loading={mutation.isPending || formState.isSubmitting} onPress={handleSubmit((values) => mutation.mutate(values as FarmFormValues))} />
         </Card>
@@ -288,6 +300,37 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 14,
     marginRight: 5,
+  },
+  locationSection: {
+    gap: 12,
+    borderRadius: 18,
+    backgroundColor: "rgba(234, 246, 231, 0.62)",
+    borderWidth: 1,
+    borderColor: "#DDEEDD",
+    padding: 12,
+  },
+  locationHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  locationTitle: {
+    color: palette.text,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  locationHint: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  gpsButton: {
+    minHeight: 42,
+    borderRadius: 14,
+    paddingHorizontal: 14,
   },
   locationBox: {
     minHeight: 52,

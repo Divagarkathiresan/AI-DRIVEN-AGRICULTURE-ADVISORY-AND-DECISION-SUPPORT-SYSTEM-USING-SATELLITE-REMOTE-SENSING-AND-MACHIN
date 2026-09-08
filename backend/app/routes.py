@@ -11,8 +11,10 @@ from .model_loader import model, encoder, predict_price
 from .schemas import CropInput, UserRegister, SendOTPRequest, VerifyOTPRequest, MarketPriceRequest
 from .farm_schema import Farm
 from .irrigation_report_schema import IrrigationReport
+from .carbon_schema import CarbonCreditRequest
 from .auth import CurrentUser, create_access_token, get_current_user
-from .database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history
+from .carbon.carbon_service import generate_carbon_report
+from .database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history, save_carbon_report, get_carbon_reports_by_farm
 from .database import connection
 from irrigation.irrigation_service import IrrigationService
 
@@ -465,6 +467,42 @@ def add_farm(data: Farm, current_user: CurrentUser = Depends(get_current_user)):
     farm["user_id"] = current_user.user_id
     result = create_farm(farm)
     return {"message": "Farm created successfully", "farm_id": str(result.inserted_id)}
+
+
+@router.post("/carbon-credit", status_code=201)
+def calculate_carbon_credit(
+    data: CarbonCreditRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Create an estimate from the complete farm-practice request body."""
+    farm = get_farm_by_id(data.farm_id)
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+    if farm.get("user_id") != current_user.user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this farm")
+
+    try:
+        report = generate_carbon_report(**data.model_dump(exclude={"farm_id"}))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    report["farm_id"] = data.farm_id
+    save_carbon_report(report)
+    return report
+
+
+@router.get("/farm/{farm_id}/carbon-credit")
+def get_carbon_reports(
+    farm_id: str, current_user: CurrentUser = Depends(get_current_user)
+):
+    """Return the caller's saved carbon-credit potential estimates for a farm."""
+    farm = get_farm_by_id(farm_id)
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+    if farm.get("user_id") != current_user.user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this farm")
+
+    return {"farm_id": farm_id, "reports": get_carbon_reports_by_farm(farm_id)}
 
 
 @router.post("/disease/predict")

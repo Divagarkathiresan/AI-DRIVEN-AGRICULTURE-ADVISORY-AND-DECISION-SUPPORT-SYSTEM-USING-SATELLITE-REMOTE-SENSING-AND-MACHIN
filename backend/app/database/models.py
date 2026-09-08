@@ -78,3 +78,18 @@ def get_market_price_history(crop: str, location: str, variety: str):
         }
     ).sort("date", 1))
     return records
+
+
+def save_carbon_report(report: dict):
+    # PyMongo adds ``_id`` to the inserted dictionary.  Insert a copy so the
+    # route can return the original JSON-safe report without an ObjectId.
+    document = {**report, "created_at": datetime.utcnow()}
+    return connection.carbon_reports_collection.insert_one(document)
+
+
+def get_carbon_reports_by_farm(farm_id: str):
+    return list(
+        connection.carbon_reports_collection.find({"farm_id": farm_id}, {"_id": 0}).sort(
+            "created_at", -1
+        )
+    )

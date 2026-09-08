@@ -8,7 +8,7 @@ MONGODB_URI = os.getenv("MONGODB_URI")
 DATABASE_NAME = os.getenv("DATABASE_NAME")
 
 client = None
-users_collection = None
+users_collection = None 
 predictions_collection = None
 otp_collection = None
 farms_collection = None
@@ -29,3 +29,4 @@ def connect():
     irrigation_reports_collection = db["irrigation_reports"]
     market_prices_collection = db["market_prices"]
     carbon_reports_collection = db["carbon_reports"]
+    carbon_reports_collection.create_index("farm_id", unique=True)

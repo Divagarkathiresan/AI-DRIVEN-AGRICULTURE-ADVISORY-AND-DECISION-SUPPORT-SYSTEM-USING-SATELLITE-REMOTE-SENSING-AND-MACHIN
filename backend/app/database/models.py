@@ -93,3 +93,9 @@ def get_carbon_reports_by_farm(farm_id: str):
             "created_at", -1
         )
     )
+
+
+def get_carbon_report_by_farm(farm_id: str):
+    return connection.carbon_reports_collection.find_one(
+        {"farm_id": farm_id}, {"_id": 0}
+    )

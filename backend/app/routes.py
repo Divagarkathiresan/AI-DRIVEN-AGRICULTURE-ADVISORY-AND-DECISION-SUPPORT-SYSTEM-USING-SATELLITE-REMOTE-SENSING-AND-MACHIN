@@ -2,7 +2,7 @@ import os
 import random
 import requests
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Response
 from fastapi.responses import JSONResponse
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -14,9 +14,10 @@ from .irrigation_report_schema import IrrigationReport
 from .carbon_schema import CarbonCreditRequest
 from .auth import CurrentUser, create_access_token, get_current_user
 from .carbon.carbon_service import generate_carbon_report
-from .database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history, save_carbon_report, get_carbon_reports_by_farm
+from .database.models import save_prediction, register_user, store_otp, verify_otp, create_farm, get_farm_by_id, get_farms_by_user, get_irrigation_report_by_date, get_irrigation_reports_by_farm, save_irrigation_report, get_market_price_history, save_carbon_report, get_carbon_reports_by_farm, get_carbon_report_by_farm
 from .database import connection
 from irrigation.irrigation_service import IrrigationService
+from pymongo.errors import DuplicateKeyError
 
 router = APIRouter()
 
@@ -469,9 +470,10 @@ def add_farm(data: Farm, current_user: CurrentUser = Depends(get_current_user)):
     return {"message": "Farm created successfully", "farm_id": str(result.inserted_id)}
 
 
-@router.post("/carbon-credit", status_code=201)
+@router.post("/carbon-credit")
 def calculate_carbon_credit(
     data: CarbonCreditRequest,
+    response: Response,
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Create an estimate from the complete farm-practice request body."""
@@ -481,13 +483,27 @@ def calculate_carbon_credit(
     if farm.get("user_id") != current_user.user_id:
         raise HTTPException(status_code=403, detail="You do not have access to this farm")
 
+    existing_report = get_carbon_report_by_farm(data.farm_id)
+    if existing_report:
+        return existing_report
+
     try:
         report = generate_carbon_report(**data.model_dump(exclude={"farm_id"}))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     report["farm_id"] = data.farm_id
-    save_carbon_report(report)
+    try:
+        save_carbon_report(report)
+    except DuplicateKeyError:
+        # A simultaneous request saved the farm report first; return it instead
+        # of creating a duplicate.
+        existing_report = get_carbon_report_by_farm(data.farm_id)
+        if existing_report:
+            return existing_report
+        raise
+
+    response.status_code = 201
     return report
 
 

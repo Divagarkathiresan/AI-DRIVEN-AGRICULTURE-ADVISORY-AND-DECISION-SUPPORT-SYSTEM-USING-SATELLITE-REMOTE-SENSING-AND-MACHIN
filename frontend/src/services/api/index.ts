@@ -26,6 +26,32 @@ export type MarketPredictionResult = {
   prediction_date: string;
 };
 
+export type CarbonCreditPayload = {
+  farm_id: string;
+  crop: string;
+  farm_area: number;
+  area_unit: string;
+  irrigation_method: string;
+  fertilizer_type: string;
+  tillage_practice: string;
+  residue_management: string;
+  fertilizer_quantity_kg: number;
+  water_usage_liters_per_day: number;
+};
+
+export type CarbonCreditResult = {
+  farm_id?: string;
+  crop: string;
+  farm_area: number;
+  area_unit: string;
+  baseline_emission_tco2e: number;
+  project_emission_tco2e: number;
+  estimated_co2e_reduction_tco2e: number;
+  estimated_carbon_credit_potential: number;
+  unit: string;
+  carbon_status: string;
+};
+
 export const registerUser = async (payload: RegisterPayload) => {
   const uid = payload.uid || payload.phone;
   const { data } = await apiClient.post("/register", { ...payload, uid });
@@ -77,6 +103,22 @@ export const predictMarketPrice = async (payload: MarketPredictionPayload): Prom
     current_price: Number(data?.current_price ?? 0),
     predicted_price: Number(data?.predicted_price ?? 0),
     prediction_date: data?.prediction_date ?? new Date().toISOString().slice(0, 10),
+  };
+};
+
+export const calculateCarbonCredit = async (payload: CarbonCreditPayload): Promise<CarbonCreditResult> => {
+  const { data } = await apiClient.post("/carbon-credit", payload);
+  return {
+    farm_id: data?.farm_id ?? payload.farm_id,
+    crop: data?.crop ?? payload.crop,
+    farm_area: Number(data?.farm_area ?? payload.farm_area),
+    area_unit: data?.area_unit ?? payload.area_unit,
+    baseline_emission_tco2e: Number(data?.baseline_emission_tco2e ?? 0),
+    project_emission_tco2e: Number(data?.project_emission_tco2e ?? 0),
+    estimated_co2e_reduction_tco2e: Number(data?.estimated_co2e_reduction_tco2e ?? 0),
+    estimated_carbon_credit_potential: Number(data?.estimated_carbon_credit_potential ?? 0),
+    unit: data?.unit ?? "tCO2e",
+    carbon_status: data?.carbon_status ?? "Estimated",
   };
 };
 

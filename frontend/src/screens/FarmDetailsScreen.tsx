@@ -1,14 +1,22 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, MapPin, X } from "lucide-react-native";
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Leaf, MapPin, X } from "lucide-react-native";
 import { Animated, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Svg, { Circle, G, Line, Polyline, Text as SvgText } from "react-native-svg";
 
 import { AppScreen } from "@/components/screen";
 import { Illustration } from "@/components/illustrations";
 import { AnimatedCard, AppButton, Card, SectionHeader } from "@/components/ui";
-import { fetchFarmIrrigationReport, fetchFarmIrrigationReports, predictMarketPrice, type MarketPredictionResult } from "@/services/api";
+import {
+  calculateCarbonCredit,
+  fetchFarmIrrigationReport,
+  fetchFarmIrrigationReports,
+  predictMarketPrice,
+  type CarbonCreditPayload,
+  type CarbonCreditResult,
+  type MarketPredictionResult,
+} from "@/services/api";
 import { useAppStore } from "@/store/appStore";
 import { palette } from "@/theme/agriculture";
 import { formatCropName, getCropLifecycle, getExpectedStageForDay } from "@/constants/cropLifecycle";
@@ -52,7 +60,10 @@ export function FarmDetailsScreen() {
   });
   const [dailyPage, setDailyPage] = useState(0);
   const [marketDialogVisible, setMarketDialogVisible] = useState(false);
+  const [carbonDialogVisible, setCarbonDialogVisible] = useState(false);
   const farmCrop = selectedFarm?.crop_name || data?.crop_name || "";
+  const farmArea = data?.water_requirement?.farm_area ?? selectedFarm?.area?.value ?? 0;
+  const farmAreaUnit = data?.water_requirement?.unit || selectedFarm?.area?.unit || "acre";
   const displayedReports = useMemo(
     () => mergeCurrentReport(dailyReports, data, farmId),
     [dailyReports, data, farmId],
@@ -121,6 +132,7 @@ export function FarmDetailsScreen() {
               <InfoRow label="Farm Unit" value={data?.water_requirement?.unit || selectedFarm?.area?.unit || placeholder} />
               <InfoRow label="Crop Name" value={data?.crop_name || selectedFarm?.crop_name || placeholder} />
               <InfoRow label="Location" value={formatLocation(selectedFarm?.location, data?.location)} icon={<MapPin size={16} color={palette.primary} />} />
+              <AppButton title="Carbon credit" variant="secondary" onPress={() => setCarbonDialogVisible(true)} />
               {canPredictMarketValue ? (
                 <AppButton title="Predict Market Value" onPress={() => setMarketDialogVisible(true)} />
               ) : null}
@@ -149,9 +161,108 @@ export function FarmDetailsScreen() {
             crop={farmCrop}
             onClose={() => setMarketDialogVisible(false)}
           />
+          <CarbonCreditDialog
+            visible={carbonDialogVisible}
+            farmId={farmId}
+            crop={farmCrop}
+            farmArea={farmArea}
+            areaUnit={farmAreaUnit}
+            irrigationType={selectedFarm?.irrigation_type}
+            onClose={() => setCarbonDialogVisible(false)}
+          />
         </>
       )}
     </AppScreen>
+  );
+}
+
+function CarbonCreditDialog({
+  visible,
+  farmId,
+  crop,
+  farmArea,
+  areaUnit,
+  irrigationType,
+  onClose,
+}: {
+  visible: boolean;
+  farmId: string;
+  crop: string;
+  farmArea: number;
+  areaUnit: string;
+  irrigationType?: string;
+  onClose: () => void;
+}) {
+  const mutation = useMutation<CarbonCreditResult, Error, CarbonCreditPayload>({ mutationFn: calculateCarbonCredit });
+  const result = mutation.data ?? null;
+
+  const loadCarbonCredit = () => {
+    mutation.reset();
+    mutation.mutate({
+      farm_id: farmId,
+      crop: formatCropName(crop),
+      farm_area: Number(farmArea),
+      area_unit: areaUnit || "acre",
+      // The current farm records only retain irrigation type. These baseline values
+      // satisfy the existing API contract without changing any backend behavior.
+      irrigation_method: normalizeIrrigationMethod(irrigationType),
+      fertilizer_type: "Chemical",
+      tillage_practice: "Conventional",
+      residue_management: "Burned",
+      fertilizer_quantity_kg: 0,
+      water_usage_liters_per_day: 0,
+    });
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} onShow={loadCarbonCredit}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.carbonDialog}>
+          <Pressable style={styles.dialogCloseButton} onPress={onClose} accessibilityLabel="Close carbon credit dialog">
+            <X size={20} color={palette.text} />
+          </Pressable>
+          <View style={styles.carbonDialogHeader}>
+            <View style={styles.carbonIconWrap}><Leaf size={23} color={palette.primary} /></View>
+            <Text style={styles.dialogTitle}>Carbon Credit Score</Text>
+            <Text style={styles.dialogSubtitle}>Estimated for {formatCropName(crop)} · {formatNumber(farmArea)} {areaUnit}</Text>
+          </View>
+          {mutation.isPending ? (
+            <View style={styles.carbonLoading}><Text style={styles.carbonLoadingText}>Calculating your farm’s carbon potential...</Text></View>
+          ) : null}
+          {mutation.error ? <Text style={styles.dialogError}>{mutation.error.message || "Unable to calculate carbon credit."}</Text> : null}
+          {result ? <CarbonCreditResultView result={result} /> : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function CarbonCreditResultView({ result }: { result: CarbonCreditResult }) {
+  const unit = result.unit || "tCO2e";
+  return (
+    <View style={styles.carbonResult}>
+      <View style={styles.carbonScoreCard}>
+        <Text style={styles.carbonScoreLabel}>ESTIMATED CREDIT POTENTIAL</Text>
+        <Text style={styles.carbonScoreValue}>{formatNumber(result.estimated_carbon_credit_potential, 2)}</Text>
+        <Text style={styles.carbonScoreUnit}>{unit}</Text>
+        <View style={styles.carbonStatusPill}><Text style={styles.carbonStatusText}>{result.carbon_status}</Text></View>
+      </View>
+      <View style={styles.carbonMetrics}>
+        <CarbonMetric label="Baseline emissions" value={result.baseline_emission_tco2e} unit={unit} />
+        <CarbonMetric label="Project emissions" value={result.project_emission_tco2e} unit={unit} />
+        <CarbonMetric label="CO₂e reduction" value={result.estimated_co2e_reduction_tco2e} unit={unit} highlight />
+      </View>
+      <Text style={styles.carbonNotice}>This is an advisory estimate, not an official carbon-credit verification or issuance.</Text>
+    </View>
+  );
+}
+
+function CarbonMetric({ label, value, unit, highlight }: { label: string; value: number; unit: string; highlight?: boolean }) {
+  return (
+    <View style={[styles.carbonMetric, highlight && styles.carbonMetricHighlight]}>
+      <Text style={styles.carbonMetricLabel}>{label}</Text>
+      <Text style={[styles.carbonMetricValue, highlight && styles.carbonMetricValueHighlight]}>{formatNumber(value, 2)} <Text style={styles.carbonMetricUnit}>{unit}</Text></Text>
+    </View>
   );
 }
 
@@ -583,6 +694,13 @@ const getVarietyOptions = (cropName?: string) => {
   return ["Other"];
 };
 
+const normalizeIrrigationMethod = (irrigationType?: string) => {
+  const value = (irrigationType || "").trim().toLowerCase();
+  if (value.includes("drip")) return "Drip";
+  if (value.includes("sprinkler")) return "Sprinkler";
+  return "Flood";
+};
+
 const getReportIdentity = (report: IrrigationReport, fallbackIndex = 0) => {
   if (report.report_date) return `date:${report.report_date}`;
   if (typeof report.crop_day === "number") return `day:${report.crop_day}`;
@@ -675,6 +793,135 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: 18,
     gap: 13,
+  },
+  carbonDialog: {
+    width: "100%",
+    maxWidth: 430,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: palette.border,
+    paddingHorizontal: 18,
+    paddingTop: 48,
+    paddingBottom: 18,
+    gap: 16,
+  },
+  carbonDialogHeader: {
+    alignItems: "center",
+    gap: 7,
+  },
+  carbonIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: palette.lightGreen,
+    borderWidth: 1,
+    borderColor: "#D8ECD6",
+  },
+  carbonLoading: {
+    minHeight: 150,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  carbonLoadingText: {
+    color: palette.muted,
+    fontWeight: "800",
+    textAlign: "center",
+    lineHeight: 21,
+  },
+  carbonResult: {
+    gap: 12,
+  },
+  carbonScoreCard: {
+    alignItems: "center",
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    backgroundColor: "#F1F8EF",
+    borderWidth: 1,
+    borderColor: "#D5EAD2",
+    gap: 4,
+  },
+  carbonScoreLabel: {
+    color: palette.caption,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.7,
+  },
+  carbonScoreValue: {
+    color: palette.primary,
+    fontSize: 36,
+    fontWeight: "900",
+    lineHeight: 42,
+  },
+  carbonScoreUnit: {
+    color: palette.muted,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  carbonStatusPill: {
+    marginTop: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D5EAD2",
+  },
+  carbonStatusText: {
+    color: palette.primary,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  carbonMetrics: {
+    gap: 8,
+  },
+  carbonMetric: {
+    minHeight: 51,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E1ECE0",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: "#FBFEFA",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  carbonMetricHighlight: {
+    backgroundColor: palette.lightGreen,
+    borderColor: "#CBE7C8",
+  },
+  carbonMetricLabel: {
+    color: palette.caption,
+    fontSize: 12,
+    fontWeight: "800",
+    flex: 1,
+  },
+  carbonMetricValue: {
+    color: palette.text,
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "right",
+  },
+  carbonMetricValueHighlight: {
+    color: palette.primary,
+  },
+  carbonMetricUnit: {
+    color: palette.muted,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  carbonNotice: {
+    color: palette.caption,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
+    paddingHorizontal: 10,
   },
   dialogCloseButton: {
     position: "absolute",

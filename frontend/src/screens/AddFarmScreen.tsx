@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { router } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
 
 import { AppScreen } from "@/components/screen";
+import { FarmLocationMap } from "@/components/farm-location-map";
 import { AppButton, Card, FieldInput, SectionHeader } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { createFarm } from "@/services/api";
@@ -70,6 +71,15 @@ export function AddFarmScreen() {
   useEffect(() => {
     reset(defaults);
   }, [defaults, reset]);
+
+  const selectedLocation = useWatch({ control, name: "location" });
+
+  const selectMapLocation = useCallback((location: FarmFormValues["location"]) => {
+    setLocationDenied(false);
+    updateDraft({ location });
+    setValue("location.latitude", location.latitude, { shouldDirty: true, shouldValidate: true });
+    setValue("location.longitude", location.longitude, { shouldDirty: true, shouldValidate: true });
+  }, [setValue, updateDraft]);
 
   const requestLocation = useCallback(async () => {
   try {
@@ -139,14 +149,7 @@ export function AddFarmScreen() {
       longitude = location.coords.longitude;
     }
 
-    updateDraft({
-      location: {
-        latitude,
-        longitude,
-      },
-    });
-    setValue("location.latitude", latitude, { shouldDirty: true, shouldValidate: true });
-    setValue("location.longitude", longitude, { shouldDirty: true, shouldValidate: true });
+    selectMapLocation({ latitude, longitude });
     } catch (error) {
       console.log("Location Error:", error);
 
@@ -155,7 +158,7 @@ export function AddFarmScreen() {
         "error"
       );
     }
-  }, [setValue, updateDraft, toast]);
+  }, [selectMapLocation, toast]);
 
   useEffect(() => {
   const timeout = setTimeout(() => {
@@ -241,7 +244,7 @@ export function AddFarmScreen() {
             <View style={styles.locationHeader}>
               <View>
                 <Text style={styles.locationTitle}>Farm Location</Text>
-                <Text style={styles.locationHint}>{locationDenied ? "GPS unavailable. Enter coordinates manually." : "Use GPS or edit coordinates manually."}</Text>
+                <Text style={styles.locationHint}>{locationDenied ? "GPS unavailable. Select a point on the map or enter coordinates." : "Tap the map, use GPS, or edit coordinates manually."}</Text>
               </View>
               <AppButton title="Use GPS" variant="secondary" onPress={requestLocation} style={styles.gpsButton} />
             </View>
@@ -267,6 +270,7 @@ export function AddFarmScreen() {
                 />
               )} />
             </View>
+            <FarmLocationMap location={selectedLocation} onSelect={selectMapLocation} />
           </View>
 
           <AppButton title="Save Farm" loading={mutation.isPending || formState.isSubmitting} onPress={handleSubmit((values) => mutation.mutate(values as FarmFormValues))} />

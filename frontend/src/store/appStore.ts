@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { clearAuthSession, getAuthSession, saveAuthSession } from "@/services/authStorage";
-import type { AuthSession, CropPredictionResult, Farm, FarmFormValues } from "@/types/domain";
+import type { AppNotification, AuthSession, CropPredictionResult, Farm, FarmFormValues } from "@/types/domain";
 
 const initialDraft: FarmFormValues = {
   user_id: "",
@@ -29,6 +29,7 @@ type AppState = {
   predictionResult: CropPredictionResult | null;
   farms: Farm[];
   selectedFarm: Farm | null;
+  notifications: AppNotification[];
   initializeAuth: () => Promise<void>;
   setAuthenticated: (session: Omit<AuthSession, "isAuthenticated">) => Promise<void>;
   logout: () => Promise<void>;
@@ -38,6 +39,8 @@ type AppState = {
   addFarm: (farm: Farm) => void;
   setFarms: (farms: Farm[]) => void;
   setSelectedFarm: (farm: Farm | null) => void;
+  addHarvestNotification: (notification: Omit<AppNotification, "id" | "createdAt" | "read">) => void;
+  markNotificationsRead: () => void;
 };
 
 const defaultAuth: AuthSession = {
@@ -55,6 +58,7 @@ export const useAppStore = create<AppState>()(
       predictionResult: null,
       farms: [],
       selectedFarm: null,
+      notifications: [],
       initializeAuth: async () => {
         const saved = await getAuthSession();
         if (!saved) return;
@@ -102,6 +106,17 @@ export const useAppStore = create<AppState>()(
         })),
       setFarms: (farms) => set({ farms }),
       setSelectedFarm: (farm) => set({ selectedFarm: farm }),
+      addHarvestNotification: (notification) =>
+        set((state) => {
+          const id = `harvest-${notification.farmId}`;
+          if (state.notifications.some((item) => item.id === id)) return state;
+          return {
+            notifications: [{ ...notification, id, createdAt: new Date().toISOString(), read: false }, ...state.notifications],
+          };
+        }),
+      markNotificationsRead: () => set((state) => ({
+        notifications: state.notifications.map((notification) => ({ ...notification, read: true })),
+      })),
     }),
     {
       name: "smart-agriculture-state",
@@ -111,6 +126,7 @@ export const useAppStore = create<AppState>()(
         predictionResult: state.predictionResult,
         farms: state.farms,
         selectedFarm: state.selectedFarm,
+        notifications: state.notifications,
       }),
     },
   ),

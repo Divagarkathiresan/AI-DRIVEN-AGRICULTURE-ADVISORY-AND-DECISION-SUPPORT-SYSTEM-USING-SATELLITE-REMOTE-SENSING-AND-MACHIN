@@ -29,6 +29,15 @@ export type Farm = FarmFormValues & {
   created_at?: string;
 };
 
+export type AppNotification = {
+  id: string;
+  farmId: string;
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+};
+
 export type CropPredictionInput = {
   phone: string;
   N: number;

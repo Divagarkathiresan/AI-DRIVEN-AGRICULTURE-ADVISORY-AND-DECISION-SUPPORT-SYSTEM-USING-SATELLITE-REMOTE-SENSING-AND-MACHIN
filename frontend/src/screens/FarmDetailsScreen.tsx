@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Leaf, MapPin, X } from "lucide-react-native";
+import { ArrowLeft, Bell, ChevronDown, ChevronLeft, ChevronRight, Leaf, MapPin, X } from "lucide-react-native";
 import { Animated, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import Svg, { Circle, G, Line, Polyline, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, G, Line, Path, Polyline, Rect, Text as SvgText } from "react-native-svg";
 
 import { AppScreen } from "@/components/screen";
 import { Illustration } from "@/components/illustrations";
@@ -32,6 +32,11 @@ type HealthPoint = {
 };
 
 const DEFAULT_MARKET = "Coimbatore, Tamil Nadu, India";
+const HARVEST_WINDOWS = [
+  { names: ["rice", "paddy"], startDay: 100, endDay: 140, label: "Rice / Paddy" },
+  { names: ["tomato"], startDay: 110, endDay: 120, label: "Tomato" },
+  { names: ["potato"], startDay: 100, endDay: 120, label: "Potato" },
+];
 
 export function FarmDetailsScreen() {
   const params = useLocalSearchParams<{ farmId?: string; backToFarms?: string }>();
@@ -61,6 +66,9 @@ export function FarmDetailsScreen() {
   const [dailyPage, setDailyPage] = useState(0);
   const [marketDialogVisible, setMarketDialogVisible] = useState(false);
   const [carbonDialogVisible, setCarbonDialogVisible] = useState(false);
+  const [dismissedHarvestFarmId, setDismissedHarvestFarmId] = useState<string | null>(null);
+  const addHarvestNotification = useAppStore((state) => state.addHarvestNotification);
+  const unreadNotifications = useAppStore((state) => state.notifications.filter((notification) => !notification.read).length);
   const farmCrop = selectedFarm?.crop_name || data?.crop_name || "";
   const farmArea = data?.water_requirement?.farm_area ?? selectedFarm?.area?.value ?? 0;
   const farmAreaUnit = data?.water_requirement?.unit || selectedFarm?.area?.unit || "acre";
@@ -77,11 +85,25 @@ export function FarmDetailsScreen() {
     [displayedReports],
   );
   const canPredictMarketValue = maxCropDay >= 120;
+  const harvestStatus = useMemo(
+    () => getHarvestStatus(farmCrop, selectedFarm?.planting_date),
+    [farmCrop, selectedFarm?.planting_date],
+  );
+  const harvestDialogVisible = Boolean(harvestStatus && dismissedHarvestFarmId !== farmId);
 
   useEffect(() => {
     if (!farmId || !data) return;
     refetchDailyReports();
   }, [data, farmId, refetchDailyReports]);
+
+  useEffect(() => {
+    if (!farmId || !harvestStatus) return;
+    addHarvestNotification({
+      farmId,
+      title: "Time to harvest",
+      message: `${harvestStatus.label} has reached its harvest window on day ${harvestStatus.daysSincePlanting}.`,
+    });
+  }, [addHarvestNotification, farmId, harvestStatus]);
 
   const goBack = () => {
     if (backToFarmsParam === "true") {
@@ -114,6 +136,10 @@ export function FarmDetailsScreen() {
           <Text style={styles.title}>Farm Details</Text>
           <Text style={styles.subtitle}>{selectedFarm?.farm_name || data?.crop_name || "Monitoring report"}</Text>
         </View>
+        <Pressable style={styles.notificationButton} onPress={() => router.push("/notifications" as never)} accessibilityLabel="Open notifications">
+          <Bell size={20} color={palette.text} />
+          {unreadNotifications ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadNotifications > 9 ? "9+" : unreadNotifications}</Text></View> : null}
+        </Pressable>
       </View>
       
 
@@ -170,9 +196,85 @@ export function FarmDetailsScreen() {
             irrigationType={selectedFarm?.irrigation_type}
             onClose={() => setCarbonDialogVisible(false)}
           />
+          {harvestStatus ? (
+            <HarvestCelebrationDialog
+              visible={harvestDialogVisible}
+              crop={harvestStatus.label}
+              daysSincePlanting={harvestStatus.daysSincePlanting}
+              harvestRange={`${harvestStatus.startDay}–${harvestStatus.endDay} days`}
+              onClose={() => setDismissedHarvestFarmId(farmId)}
+            />
+          ) : null}
         </>
       )}
     </AppScreen>
+  );
+}
+
+function HarvestCelebrationDialog({
+  visible,
+  crop,
+  daysSincePlanting,
+  harvestRange,
+  onClose,
+}: {
+  visible: boolean;
+  crop: string;
+  daysSincePlanting: number;
+  harvestRange: string;
+  onClose: () => void;
+}) {
+  const [motion] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (!visible) return;
+    motion.setValue(0);
+    const animation = Animated.loop(Animated.timing(motion, { toValue: 1, duration: 2400, useNativeDriver: true }));
+    animation.start();
+    return () => animation.stop();
+  }, [motion, visible]);
+
+  const tractorX = motion.interpolate({ inputRange: [0, 1], outputRange: [-13, 13] });
+  const farmerY = motion.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -7, 0] });
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.harvestDialog}>
+          <Pressable style={styles.dialogCloseButton} onPress={onClose} accessibilityLabel="Close harvest celebration">
+            <X size={20} color={palette.text} />
+          </Pressable>
+          <View style={styles.confettiLayer} pointerEvents="none">
+            {["#F3B42D", "#F36E55", "#2FAE63", "#4A94E8", "#A968D6", "#F3B42D"].map((color, index) => (
+              <Animated.View key={`${color}-${index}`} style={[styles.confetti, { backgroundColor: color, left: `${10 + index * 16}%`, transform: [{ translateY: motion.interpolate({ inputRange: [0, 1], outputRange: [-8 - (index % 2) * 22, 95 + index * 11] }) }, { rotate: `${index * 31}deg` }] }]} />
+            ))}
+          </View>
+          <Text style={styles.harvestKicker}>HARVEST CELEBRATION</Text>
+          <Text style={styles.harvestTitle}>Time to harvest! 🎉</Text>
+          <Text style={styles.harvestCopy}>{crop} is on day {daysSincePlanting}, within its typical {harvestRange} harvest window.</Text>
+          <View style={styles.harvestScene}>
+            <Animated.View style={[styles.farmerMotion, { transform: [{ translateY: farmerY }] }]}><Illustration name="farmer" width={94} height={94} /></Animated.View>
+            <Animated.View style={{ transform: [{ translateX: tractorX }] }}><TractorIllustration /></Animated.View>
+          </View>
+          <AppButton title="Plan harvest" onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function TractorIllustration() {
+  return (
+    <Svg width={146} height={88} viewBox="0 0 146 88">
+      <Path d="M8 69h126" stroke="#B2D9A9" strokeWidth="4" strokeLinecap="round" />
+      <Rect x="45" y="35" width="56" height="28" rx="7" fill="#E9A82E" />
+      <Path d="M61 35V16h29l13 19z" fill={palette.primaryDark} />
+      <Path d="M67 21h19l8 12H67z" fill="#C9EAF3" />
+      <Rect x="98" y="43" width="26" height="18" rx="5" fill="#D98A20" />
+      <Circle cx="54" cy="66" r="16" fill="#233226" /><Circle cx="54" cy="66" r="7" fill="#F7F5E9" />
+      <Circle cx="111" cy="65" r="11" fill="#233226" /><Circle cx="111" cy="65" r="4" fill="#F7F5E9" />
+      <Path d="M25 57h22" stroke="#E9A82E" strokeWidth="8" strokeLinecap="round" />
+    </Svg>
   );
 }
 
@@ -737,6 +839,32 @@ const getTodayDateString = () => {
   return `${year}-${month}-${day}`;
 };
 
+const getHarvestStatus = (cropName?: string, plantingDate?: string) => {
+  if (!cropName || !plantingDate) return null;
+  const harvestWindow = HARVEST_WINDOWS.find((window) => {
+    const normalizedCrop = cropName.trim().toLowerCase();
+    return window.names.some((name) => normalizedCrop.includes(name));
+  });
+  const plantedAt = parseLocalDate(plantingDate);
+  if (!harvestWindow || !plantedAt) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysSincePlanting = Math.floor((today.getTime() - plantedAt.getTime()) / 86_400_000);
+  if (daysSincePlanting < harvestWindow.startDay) return null;
+
+  return { ...harvestWindow, daysSincePlanting };
+};
+
+const parseLocalDate = (value: string) => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
 const getLabelIndexes = (count: number) => {
   if (count <= 5) return Array.from({ length: count }, (_, index) => index);
   const middle = Math.floor((count - 1) / 2);
@@ -759,6 +887,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  notificationButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.66)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.74)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#D94C3D",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  notificationBadgeText: { color: "#FFFFFF", fontSize: 10, fontWeight: "900" },
   headerText: {
     flex: 1,
   },
@@ -782,6 +933,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 18,
   },
+  harvestDialog: {
+    width: "100%",
+    maxWidth: 430,
+    borderRadius: 26,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D7EBD2",
+    paddingHorizontal: 22,
+    paddingTop: 48,
+    paddingBottom: 20,
+    alignItems: "center",
+    gap: 12,
+    overflow: "hidden",
+  },
+  confettiLayer: { ...StyleSheet.absoluteFill },
+  confetti: { position: "absolute", top: 18, width: 9, height: 16, borderRadius: 3 },
+  harvestKicker: { color: palette.primary, fontSize: 11, fontWeight: "900", letterSpacing: 1.2 },
+  harvestTitle: { color: palette.text, fontSize: 27, fontWeight: "900", textAlign: "center" },
+  harvestCopy: { color: palette.muted, textAlign: "center", fontSize: 14, fontWeight: "600", lineHeight: 21 },
+  harvestScene: { width: "100%", height: 116, flexDirection: "row", justifyContent: "center", alignItems: "flex-end", gap: 2, backgroundColor: "#F0FAEC", borderRadius: 19, paddingHorizontal: 10 },
+  farmerMotion: { marginBottom: 5 },
   marketDialog: {
     width: "100%",
     maxWidth: 430,

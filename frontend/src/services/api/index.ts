@@ -124,7 +124,17 @@ export const calculateCarbonCredit = async (payload: CarbonCreditPayload): Promi
 
 export const createFarm = async (payload: FarmFormValues): Promise<Farm> => {
   const backendPayload = {
-    ...payload,
+    user_id: payload.user_id,
+    farm_name: payload.farm_name,
+    crop_name: payload.crop_name,
+    area: payload.area,
+    // The API's Farm schema expects map coordinates inside `location`.
+    // Keep this explicit so a map tap is always sent as numeric latitude
+    // and longitude, rather than relying on text-input values.
+    location: {
+      latitude: Number(payload.location.latitude),
+      longitude: Number(payload.location.longitude),
+    },
     planting_date: payload.planting_date || null,
     soil_type: payload.soil_type || null,
     irrigation_type: payload.irrigation_type || null,

@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { router } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
 
+import { FarmMap } from "@/components/farm-map";
 import { AppScreen } from "@/components/screen";
 import { AppButton, Card, FieldInput, SectionHeader } from "@/components/ui";
 import { useToast } from "@/components/toast";
@@ -66,6 +67,7 @@ export function AddFarmScreen() {
     resolver: zodResolver(farmSchema) as never,
     defaultValues: defaults,
   });
+  const selectedLocation = useWatch({ control, name: "location" });
 
   useEffect(() => {
     reset(defaults);
@@ -157,6 +159,15 @@ export function AddFarmScreen() {
     }
   }, [setValue, updateDraft, toast]);
 
+  const setFarmLocation = useCallback(
+    (latitude: number, longitude: number) => {
+      const location = { latitude, longitude };
+      updateDraft({ location });
+      setValue("location", location, { shouldDirty: true, shouldValidate: true });
+    },
+    [setValue, updateDraft],
+  );
+
   useEffect(() => {
   const timeout = setTimeout(() => {
     requestLocation().catch(() => setLocationDenied(true));
@@ -185,7 +196,7 @@ export function AddFarmScreen() {
   return (
     <AppScreen withNav>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.form}>
-        <SectionHeader title="Add Farm" caption="Create a farm profile with GPS or manually entered coordinates." />
+        <SectionHeader title="Add Farm" caption="Choose your farm location by tapping the map, using GPS, or entering coordinates." />
         {success ? (
           <Card style={styles.successCard}>
             <Text style={styles.successIcon}>✓</Text>
@@ -241,7 +252,7 @@ export function AddFarmScreen() {
             <View style={styles.locationHeader}>
               <View>
                 <Text style={styles.locationTitle}>Farm Location</Text>
-                <Text style={styles.locationHint}>{locationDenied ? "GPS unavailable. Enter coordinates manually." : "Use GPS or edit coordinates manually."}</Text>
+                <Text style={styles.locationHint}>{locationDenied ? "Tap the map or enter coordinates manually." : "Tap the map, use GPS, or edit coordinates manually."}</Text>
               </View>
               <AppButton title="Use GPS" variant="secondary" onPress={requestLocation} style={styles.gpsButton} />
             </View>
@@ -267,6 +278,7 @@ export function AddFarmScreen() {
                 />
               )} />
             </View>
+            <FarmMap location={selectedLocation} onLocationChange={setFarmLocation} />
           </View>
 
           <AppButton title="Save Farm" loading={mutation.isPending || formState.isSubmitting} onPress={handleSubmit((values) => mutation.mutate(values as FarmFormValues))} />

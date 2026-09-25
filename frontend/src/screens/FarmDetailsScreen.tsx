@@ -626,16 +626,43 @@ function DailyReportsSection({
 }
 
 function DetailsSkeleton() {
+  const [growth] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(growth, { toValue: 1, duration: 1150, useNativeDriver: true }),
+        Animated.delay(360),
+        Animated.timing(growth, { toValue: 0, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [growth]);
+
+  const scale = growth.interpolate({ inputRange: [0, 1], outputRange: [0.58, 1.04] });
+  const rise = growth.interpolate({ inputRange: [0, 1], outputRange: [17, -3] });
+  const leafTilt = growth.interpolate({ inputRange: [0, 1], outputRange: ["-5deg", "5deg"] });
+
   return (
-    <View style={styles.skeletonStack}>
-      {[0, 1, 2, 3].map((item) => (
-        <Card key={item} style={styles.skeletonCard}>
-          <View style={[styles.skeleton, styles.skeletonTitle]} />
-          <View style={[styles.skeleton, styles.skeletonLine]} />
-          <View style={[styles.skeleton, styles.skeletonLineShort]} />
-        </Card>
-      ))}
-    </View>
+    <Card style={styles.growingLoader}>
+      <View style={styles.loaderScene}>
+        <View style={styles.loaderSun} />
+        <View style={styles.loaderGround} />
+        <Animated.View style={[styles.growingPlant, { transform: [{ translateY: rise }, { scaleY: scale }] }]}>
+          <Svg width={138} height={150} viewBox="0 0 138 150">
+            <Path d="M69 130V48" stroke={palette.primaryDark} strokeWidth="9" strokeLinecap="round" />
+            <Path d="M67 93C35 89 24 62 24 62c29-9 46 8 43 31z" fill="#46B45A" />
+            <Path d="M72 76c29-15 46 2 46 2-17 25-40 22-46-2z" fill={palette.primary} />
+            <Path d="M67 58C45 56 38 40 38 40c20-7 31 5 29 18z" fill="#83D56F" />
+            <Circle cx="69" cy="45" r="8" fill="#F2B233" />
+          </Svg>
+        </Animated.View>
+        <Animated.View style={[styles.loaderLeaf, { transform: [{ rotate: leafTilt }] }]} />
+      </View>
+      <Text style={styles.loaderTitle}>Your crop insights are growing</Text>
+      <Text style={styles.loaderCopy}>Loading farm health, irrigation, and satellite information...</Text>
+    </Card>
   );
 }
 
@@ -1399,6 +1426,66 @@ const styles = StyleSheet.create({
   },
   skeletonCard: {
     gap: 14,
+  },
+  growingLoader: {
+    alignItems: "center",
+    gap: 9,
+    paddingVertical: 26,
+    overflow: "hidden",
+  },
+  loaderScene: {
+    width: 230,
+    height: 164,
+    borderRadius: 24,
+    backgroundColor: "#F1FAED",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  loaderSun: {
+    position: "absolute",
+    top: 22,
+    right: 34,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#F8D36B",
+  },
+  loaderGround: {
+    position: "absolute",
+    bottom: -20,
+    width: 280,
+    height: 64,
+    borderRadius: 140,
+    backgroundColor: "#8C5A36",
+  },
+  growingPlant: {
+    zIndex: 2,
+    marginBottom: -10,
+  },
+  loaderLeaf: {
+    position: "absolute",
+    left: 41,
+    top: 74,
+    width: 22,
+    height: 36,
+    borderTopLeftRadius: 22,
+    borderBottomRightRadius: 22,
+    backgroundColor: "#89D979",
+  },
+  loaderTitle: {
+    color: palette.text,
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  loaderCopy: {
+    color: palette.muted,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 19,
+    maxWidth: 300,
   },
   skeleton: {
     backgroundColor: "#E6EFE1",
